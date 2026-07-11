@@ -81,6 +81,17 @@
   .caret{display:inline-block;width:9px;margin-right:6px;color:var(--text3);transition:transform .15s;}
   .caret.open{transform:rotate(90deg);}
   .pillw{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;background:#F1F3F6;color:var(--text2);margin-left:7px;}
+  .tgl{font-family:var(--font);font-size:11.5px;padding:5px 11px;border:1px solid var(--line2);background:var(--card);color:var(--text2);cursor:pointer;}
+  .tgl:first-of-type{border-radius:7px 0 0 7px;} .tgl:last-of-type{border-radius:0 7px 7px 0;border-left:0;}
+  .tgl.on{background:var(--sw);color:#fff;border-color:var(--sw);}
+  .stg{text-align:center;padding:6px 4px;font-variant-numeric:tabular-nums;line-height:1.15;}
+  .stg .n{font-size:12.5px;font-weight:600;display:block;}
+  .stg .p{font-size:9.5px;opacity:.72;display:block;}
+  .stg.on{color:#fff;border-radius:5px;}
+  .ko{background:rgba(214,69,66,.13);color:#A5322F;text-align:center;font-weight:600;font-size:12.5px;}
+  .win{text-align:right;font-weight:600;font-size:12.5px;}
+  .dtable th.ctr{text-align:center;}
+  .stagehead{border-left:2px solid var(--sw);}
   .ins{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:12px;}
   .ins .top{display:flex;align-items:flex-start;gap:12px;}
   .rank{width:26px;height:26px;border-radius:8px;background:var(--sw);color:#fff;font-family:var(--disp);font-weight:600;
@@ -158,6 +169,9 @@ const VIEWS = ['Overview','Activation funnel','Acquisition & CAC','Engagement & 
 let TRIALS=null, PUMAP=null, CHANNEL=null, CAMPAIGN=null, CRM=null, NURTURE=null, SB=null;
 let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
+let acqMode='stages';   // 'stages' | 'funnel' | 'cost'
+let acqJourney=true;    // Journey (ever reached) vs Now (currently sits)
+let acqRow='campaign';  // 'campaign' | 'adgroup'
 const HAVE = () => TRIALS && TRIALS.length;
 
 const mean = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
@@ -190,10 +204,10 @@ async function loadLive(){
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
     SB = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const [trials, pu, channel, crm] = await Promise.all([
-      fetchAll(SB,'trials','trial_id,product,deployment_type,region,company_size,persona,acquisition_channel,campaign,landing_variant,activated,is_pql,sales_assisted,trial_extended,converted,signup_date,time_to_convert_days,non_conversion_reason,cac_usd'),
+      fetchAll(SB,'trials','trial_id,product,deployment_type,region,company_size,persona,acquisition_channel,campaign,landing_variant,activated,is_pql,sales_assisted,trial_extended,converted,signup_date,time_to_convert_days,non_conversion_reason,cac_usd,acv_usd'),
       fetchAll(SB,'product_usage','trial_id,installed,db_connected,time_to_activate_hrs,feature_adoption_rate,engagement_score,logins,wait_time_analyses_run,tuning_advisors_used,anomaly_alerts_configured,reports_generated'),
       fetchAll(SB,'channel_performance','month,channel,signups,conversions,spend_usd'),
-      fetchAll(SB,'crm_opportunities','product,region,stage,won,acv_usd')
+      fetchAll(SB,'crm_opportunities','trial_id,product,region,stage,won,acv_usd')
     ]);
     if(!trials.length) throw new Error('trials table is empty');
     // campaign_performance is optional — dashboard still works without it
@@ -221,7 +235,7 @@ async function loadSnapshot(){
         campaign:dec('campaign',i),landing_variant:dec('landing_variant',i),non_conversion_reason:dec('non_conversion_reason',i),
         signup_date:dec('month',i)+'-01',activated:!!T.activated[i],is_pql:!!T.is_pql[i],converted:!!T.converted[i],
         sales_assisted:!!T.sales_assisted[i],trial_extended:!!T.trial_extended[i],
-        cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i]});
+        cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null});
       PUMAP[id]={trial_id:id,installed:!!T.installed[i],db_connected:!!T.db_connected[i],
         time_to_activate_hrs:T.time_to_activate_hrs[i],feature_adoption_rate:T.feature_adoption_rate[i],
         engagement_score:T.engagement_score[i],logins:T.logins[i],wait_time_analyses_run:T.wait_time_analyses_run[i],
@@ -230,7 +244,7 @@ async function loadSnapshot(){
     }
     CHANNEL=S.channel.map(r=>({month:r[0],channel:r[1],signups:r[2],conversions:r[3],spend_usd:r[4]}));
     CAMPAIGN=S.campaign.map(r=>({month:r[0],channel:r[1],campaign:r[2],ad_group:r[3],impressions:r[4],clicks:r[5],spend_usd:r[6],signups:r[7],activated:r[8],conversions:r[9]}));
-    CRM=S.crm.map(r=>({product:r[0],region:r[1],stage:r[2],won:!!r[3],acv_usd:r[4]}));
+    CRM=S.crm.map(r=>({product:r[0],region:r[1],stage:r[2],won:!!r[3],acv_usd:r[4],trial_id:r[5]!=null?('T'+r[5]):null}));
     const NS=S.nurture;
     NURTURE=NS.t.map((ti,i)=>({trial_id:'T'+ti,email_step:NS.steps[NS.s[i]],opened:!!(NS.f[i]&1),clicked:!!(NS.f[i]&2)}));
     return true;
@@ -310,33 +324,70 @@ function cAcq(f){
   const agMix={};
   Object.keys(sigAllA).forEach(k=>{ const c=k.split('||')[0]; agMix[c]=agMix[c]||[]; agMix[c].push([k.split('||')[1], sigAllC[c]?sigAllA[k]/sigAllC[c]:0, spendA[k]]); });
 
+  // pipeline stages, joined back to the trial that produced them
+  const LATE=new Set(['Proposal','Negotiation','Closed Won']);
+  const pipeByTrial={};
+  (CRM||[]).forEach(o=>{ if(o.trial_id) pipeByTrial[o.trial_id]=o; });
+
+  // furthest stage each trial reached: 1 signup .. 7 closed won
+  const stageOf = r => {
+    const p=PUMAP[r.trial_id]||{}, op=pipeByTrial[r.trial_id];
+    if(op && op.won) return 7;
+    if(op) return 6;
+    if(r.is_pql) return 5;
+    if(r.activated) return 4;
+    if(p.db_connected) return 3;
+    if(p.installed) return 2;
+    return 1;
+  };
+  const isDead = r => !r.converted && !!r.non_conversion_reason;
+
   const byCmp={};
-  F.forEach(r=>{ const c=r.campaign||'—'; const o=byCmp[c]=byCmp[c]||{ch:r.acquisition_channel,s:0,a:0,cv:0};
-    o.s++; if(r.activated)o.a++; if(r.converted)o.cv++; });
+  F.forEach(r=>{ const c=r.campaign||'—'; const o=byCmp[c]=byCmp[c]||{ch:r.acquisition_channel,s:0,a:0,q:0,cv:0,late:0,wonAcv:0,
+      now:[0,0,0,0,0,0,0,0], jr:[0,0,0,0,0,0,0,0], ko:0};
+    o.s++; if(r.activated)o.a++; if(r.is_pql)o.q++; if(r.converted)o.cv++;
+    const st=stageOf(r);
+    o.now[st]++;                                  // where it sits now
+    for(let k=1;k<=st;k++) o.jr[k]++;             // every stage it ever reached
+    if(isDead(r)) o.ko++;
+    const op=pipeByTrial[r.trial_id];
+    if(op){ if(LATE.has(op.stage)) o.late++; if(op.won) o.wonAcv+=(+op.acv_usd||0); } });
 
   const campaigns=Object.entries(byCmp).map(([c,o])=>{
     const share = sigAllC[c] ? Math.min(o.s/sigAllC[c],1) : 0;
     const spend = (spendC[c]||0)*share;
     const ags=(agMix[c]||[]).map(([name,mix,fullSpend])=>{
       const s=Math.round(o.s*mix), a=Math.round(o.a*mix), cv=Math.round(o.cv*mix);
+      const sc=arr=>arr.map(v=>Math.round(v*mix));
       return {name,signups:s,act:a,conv:cv,spend:fullSpend*share,
-        cps:s?fullSpend*share/s:0, cpa:cv?fullSpend*share/cv:0, cvr:pct(cv,s)};
+        cps:s?fullSpend*share/s:0, cpa:cv?fullSpend*share/cv:0, cvr:pct(cv,s),
+        now:sc(o.now), jr:sc(o.jr), ko:Math.round(o.ko*mix), pqlR:null,
+        actR:s?pct(a,s):0};
     }).sort((x,y)=>y.spend-x.spend);
-    return {campaign:c,channel:o.ch,signups:o.s,act:o.a,conv:o.cv,spend,
-      cps:o.s?spend/o.s:0, cpa:o.cv?spend/o.cv:0, cvr:pct(o.cv,o.s), ad_groups:ags};
+    return {campaign:c,channel:o.ch,signups:o.s,act:o.a,pql:o.q,conv:o.cv,late:o.late,wonAcv:o.wonAcv,spend,
+      cps:o.s?spend/o.s:0, cpa:o.cv?spend/o.cv:0, cvr:pct(o.cv,o.s),
+      actR:pct(o.a,o.s), pqlR:pct(o.q,o.s), now:o.now, jr:o.jr, ko:o.ko, ad_groups:ags};
   });
 
   const byCh={};
-  campaigns.forEach(c=>{ const o=byCh[c.channel]=byCh[c.channel]||{signups:0,act:0,conv:0,spend:0,camps:[]};
-    o.signups+=c.signups; o.act+=c.act; o.conv+=c.conv; o.spend+=c.spend; o.camps.push(c); });
-  const channels=Object.entries(byCh).map(([ch,o])=>({channel:ch,signups:o.signups,act:o.act,conv:o.conv,spend:o.spend,
+  campaigns.forEach(c=>{ const o=byCh[c.channel]=byCh[c.channel]||{signups:0,act:0,pql:0,conv:0,late:0,wonAcv:0,spend:0,ko:0,
+      now:[0,0,0,0,0,0,0,0], jr:[0,0,0,0,0,0,0,0], camps:[]};
+    o.signups+=c.signups; o.act+=c.act; o.pql+=c.pql; o.conv+=c.conv; o.late+=c.late; o.wonAcv+=c.wonAcv;
+    o.spend+=c.spend; o.ko+=c.ko; o.camps.push(c);
+    for(let k=1;k<=7;k++){ o.now[k]+=c.now[k]; o.jr[k]+=c.jr[k]; } });
+  const sortFn=(x,y)=> acqMode==='cost' ? y.spend-x.spend : (acqMode==='stages' ? y.signups-x.signups : y.wonAcv-x.wonAcv);
+  const channels=Object.entries(byCh).map(([ch,o])=>({channel:ch,signups:o.signups,act:o.act,pql:o.pql,conv:o.conv,
+    late:o.late,wonAcv:o.wonAcv,spend:o.spend,now:o.now,jr:o.jr,ko:o.ko,
     cps:o.signups?o.spend/o.signups:0, cpa:o.conv?o.spend/o.conv:0, cvr:pct(o.conv,o.signups),
-    campaigns:o.camps.sort((x,y)=>y.spend-x.spend)})).sort((x,y)=>y.spend-x.spend);
+    actR:pct(o.act,o.signups), pqlR:pct(o.pql,o.signups),
+    campaigns:o.camps.sort(sortFn)})).sort(sortFn);
 
   const totals={spend:channels.reduce((a,c)=>a+c.spend,0),signups:F.length,
     conv:F.filter(r=>r.converted).length};
   totals.cps=totals.signups?totals.spend/totals.signups:0;
   totals.cpa=totals.conv?totals.spend/totals.conv:0;
+  totals.act=F.filter(r=>r.activated).length;
+  totals.actR=pct(totals.act,totals.signups);
 
   const bm={};
   F.forEach(r=>{ const m=String(r.signup_date).slice(0,7); const o=bm[m]=bm[m]||{s:0}; o.s++; });
@@ -470,31 +521,89 @@ function renderAcq(view,f){
   const a=cAcq(f);
   if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Acquisition &amp; CAC</p><p>Loading data…</p></div>'; return; }
   if(!a.hasCampaign) ensureCampaign();
+  const STG=['','Signed up','Installed','Connected','Activated','PQL','Opportunity','Closed Won'];
+  const STGS=['','Sign','Inst','Conn','Act','PQL','Opp','Won'];
+  const heat=(v,max)=>{ if(!v) return ''; const t=Math.min(v/(max||1),1);
+    return `background:rgba(255,98,0,${(0.10+t*0.78).toFixed(2)});color:${t>0.45?'#fff':'var(--text)'};`; };
 
-  const money=n=>'$'+Math.round(n).toLocaleString();
-  let rows='';
-  a.channels.forEach(c=>{
-    const openC = acqOpen.ch===c.channel;
-    rows+=`<tr class="clk" data-ch="${c.channel}"><td><span class="caret${openC?' open':''}">&#9656;</span><b>${CH_LABELS[c.channel]||c.channel}</b></td>
-      <td class="num">${money(c.spend)}</td><td class="num">${c.signups.toLocaleString()}</td><td class="num">${c.cvr.toFixed(1)}%</td>
-      <td class="num">$${Math.round(c.cps)}</td><td class="num"><b>${c.conv?money(c.cpa):'—'}</b></td></tr>`;
-    if(!openC) return;
-    c.campaigns.forEach(cm=>{
-      const openM = acqOpen.cmp===cm.campaign;
-      rows+=`<tr class="clk lvl2" data-cmp="${cm.campaign}"><td><span class="caret${openM?' open':''}">&#9656;</span>${cm.campaign}</td>
-        <td class="num">${money(cm.spend)}</td><td class="num">${cm.signups.toLocaleString()}</td><td class="num">${cm.cvr.toFixed(1)}%</td>
-        <td class="num">$${Math.round(cm.cps)}</td><td class="num">${cm.conv?money(cm.cpa):'—'}</td></tr>`;
-      if(!openM) return;
-      cm.ad_groups.forEach(g=>{
-        rows+=`<tr class="lvl3"><td>${g.name}</td><td class="num">${money(g.spend)}</td><td class="num">${g.signups.toLocaleString()}</td>
-          <td class="num">${g.cvr.toFixed(1)}%</td><td class="num">$${Math.round(g.cps)}</td><td class="num">${g.conv?money(g.cpa):'—'}</td></tr>`;
+  function stageCells(o){
+    const arr = acqJourney ? o.jr : o.now;
+    const base = o.jr[1]||o.signups||1;
+    const max = acqJourney ? base : Math.max(...arr.slice(1));
+    let h='';
+    for(let k=1;k<=7;k++){
+      const v=arr[k]||0;
+      const p=base?Math.round(v/base*100):0;
+      h+=`<td class="stg${k===1?' stagehead':''}" style="${k>1?heat(v,max):''}">`
+       + (v? `<span class="n">${v.toLocaleString()}</span>${k>1?`<span class="p">${p}%</span>`:''}` : '<span class="p">·</span>')
+       + `</td>`;
+    }
+    h+=`<td class="ko">${(o.ko||0).toLocaleString()}</td>`;
+    h+=`<td class="win" style="color:${o.cvr>=a.totals.cvr?'#12A374':'var(--text3)'}">${o.cvr.toFixed(1)}%</td>`;
+    return h;
+  }
+
+  let head, rows='';
+  if(acqMode==='stages'){
+    head=`<tr><th>${acqRow==='adgroup'?'Ad group':'Source'}</th>`+
+      STGS.slice(1).map((s,i)=>`<th class="num ctr${i===0?' stagehead':''}" title="${STG[i+1]}">${i+1}</th>`).join('')+
+      `<th class="num ctr">KO</th><th class="num">Win%</th></tr>`;
+  } else if(acqMode==='funnel'){
+    head=`<tr><th>Source</th><th class="num">Signups</th><th class="num">Activated</th><th class="num">PQL</th><th class="num">Paid</th><th class="num">Late-stage</th><th class="num">Won ACV</th></tr>`;
+  } else {
+    head=`<tr><th>Source</th><th class="num">Spend</th><th class="num">Signups</th><th class="num">Conv. rate</th><th class="num">$/signup</th><th class="num">$/customer</th></tr>`;
+  }
+
+  const money=n2=>'$'+Math.round(n2).toLocaleString();
+  const cells=(o,isAd)=> acqMode==='stages' ? stageCells(o)
+    : acqMode==='funnel'
+    ? `<td class="num">${o.signups.toLocaleString()}</td>
+       <td class="num">${o.actR!=null?o.actR.toFixed(0)+'%':'—'}</td>
+       <td class="num">${(o.pqlR!=null&&!isAd)?o.pqlR.toFixed(0)+'%':'—'}</td>
+       <td class="num">${o.cvr.toFixed(1)}%</td>
+       <td class="num">${!isAd?(o.late||0).toLocaleString():'—'}</td>
+       <td class="num"><b>${!isAd&&o.wonAcv?usd(o.wonAcv):'—'}</b></td>`
+    : `<td class="num">${money(o.spend)}</td>
+       <td class="num">${o.signups.toLocaleString()}</td>
+       <td class="num">${o.cvr.toFixed(1)}%</td>
+       <td class="num">$${Math.round(o.cps)}</td>
+       <td class="num"><b>${o.conv?money(o.cpa):'—'}</b></td>`;
+
+  // FLAT ad-group listing when Stages + Ad groups is selected
+  if(acqMode==='stages' && acqRow==='adgroup'){
+    const flat=[];
+    a.channels.forEach(c=>c.campaigns.forEach(cm=>cm.ad_groups.forEach(g=>
+      flat.push({...g, cvr:g.cvr, campaign:cm.campaign, channel:c.channel}))));
+    flat.sort((x,y)=>y.signups-x.signups).slice(0,25).forEach(g=>{
+      rows+=`<tr><td><b>${g.name}</b><br><span class="p" style="font-size:10.5px;color:var(--text3)">${CH_LABELS[g.channel]||g.channel} · ${g.campaign}</span></td>${stageCells(g)}</tr>`;
+    });
+  } else {
+    a.channels.forEach(c=>{
+      const openC = acqOpen.ch===c.channel;
+      rows+=`<tr class="clk" data-ch="${c.channel}"><td><span class="caret${openC?' open':''}">&#9656;</span><b>${CH_LABELS[c.channel]||c.channel}</b></td>${cells(c,false)}</tr>`;
+      if(!openC) return;
+      c.campaigns.forEach(cm=>{
+        const openM = acqOpen.cmp===cm.campaign;
+        rows+=`<tr class="clk lvl2" data-cmp="${cm.campaign}"><td><span class="caret${openM?' open':''}">&#9656;</span>${cm.campaign}</td>${cells(cm,false)}</tr>`;
+        if(!openM) return;
+        cm.ad_groups.forEach(g=>{ rows+=`<tr class="lvl3"><td>${g.name}</td>${cells(g,true)}</tr>`; });
       });
     });
-  });
+  }
 
-  const byCPA=[...a.channels].filter(c=>c.conv).sort((x,y)=>x.cpa-y.cpa);
-  const cpaMax=Math.max(...byCPA.map(c=>c.cpa),1);
-  const cpaRows=byCPA.map(c=>`<div class="frow"><span class="fname" style="width:110px">${CH_LABELS[c.channel]||c.channel}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(c.cpa/cpaMax*100,2)}%;background:${c.cpa>a.totals.cpa?'#D64542':'#12A374'}"></div></div><span class="fnum">${money(c.cpa)}</span></div>`).join('');
+  // quality vs cost scatter-ish: activation rate by channel
+  const byAct=[...a.channels].filter(c=>c.signups>=50).sort((x,y)=>y.actR-x.actR);
+  const amax=Math.max(...byAct.map(c=>c.actR),1);
+  const actRows=byAct.map(c=>`<div class="frow"><span class="fname" style="width:110px">${CH_LABELS[c.channel]||c.channel}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(c.actR/amax*100,2)}%;background:${c.actR>=a.totals.actR?'#12A374':'#D64542'}"></div></div><span class="fnum">${c.actR.toFixed(0)}%</span></div>`).join('');
+
+  const legend = acqMode==='stages'
+    ? `<p class="note">1 Signed up · 2 Installed · 3 Connected · 4 Activated · 5 PQL · 6 Opportunity · 7 Closed Won · KO = lost.
+       <b>Journey</b> counts every trial that <i>ever reached</i> a stage. <b>Now</b> counts where each trial <i>currently sits</i> — so Now sums to the total, Journey does not.
+       Stages 6–7 only exist for <b>sales-assisted</b> deals: self-serve customers buy without an opportunity record ever being created, so they convert without appearing at stage 6 or 7. Win% therefore counts <i>all</i> paying customers, not just Closed Won.
+       ${acqRow==='adgroup'?'Ad-group stages are allocated from the parent campaign by signup share — the ad-group ID is not stored on the trial record.':''}</p>`
+    : (acqMode==='funnel'
+      ? '<p class="note">Late-stage = opportunities at Proposal, Negotiation or Closed Won. PQL and pipeline are trial-level, so they are not broken out per ad group.</p>'
+      : '');
 
   view.innerHTML=`
   <div class="grid-kpi">
@@ -504,20 +613,36 @@ function renderAcq(view,f){
     <div class="kpi"><p class="l">Cost per paid customer</p><p class="v" style="color:var(--sw)">${a.totals.conv?money(a.totals.cpa):'—'}</p><p class="s">the metric that matters</p></div>
   </div>
   <div class="panel" style="margin-top:12px">
-    <div class="head"><h3>Channel → campaign → ad group<span class="pillw">click a row to drill down</span></h3><span>sorted by spend</span></div>
-    <table class="dtable"><thead><tr><th>Source</th><th class="num">Spend</th><th class="num">Signups</th><th class="num">Conv. rate</th><th class="num">$/signup</th><th class="num">$/customer</th></tr></thead><tbody id="acq-body">${rows}</tbody></table>
+    <div class="head">
+      <h3>Paid &amp; organic reports${acqMode==='stages'&&acqRow!=='adgroup'?'<span class="pillw">click a row to drill down</span>':''}</h3>
+      <span>
+        <button class="tgl${acqMode==='stages'?' on':''}" data-mode="stages">Stages</button><button class="tgl${acqMode==='funnel'?' on':''}" data-mode="funnel">Funnel quality</button><button class="tgl${acqMode==='cost'?' on':''}" data-mode="cost">Cost</button>
+      </span>
+    </div>
+    ${acqMode==='stages'?`<div style="display:flex;gap:8px;margin:-4px 0 14px;flex-wrap:wrap">
+      <span><button class="tgl${!acqJourney?' on':''}" data-j="0">Now</button><button class="tgl${acqJourney?' on':''}" data-j="1">Journey</button></span>
+      <span><button class="tgl${acqRow==='campaign'?' on':''}" data-r="campaign">Campaigns</button><button class="tgl${acqRow==='adgroup'?' on':''}" data-r="adgroup">Ad groups</button></span>
+    </div>`:''}
+    <table class="dtable"><thead>${head}</thead><tbody id="acq-body">${rows}</tbody></table>
+    ${legend}
   </div>
   <div class="row2">
-    <div class="panel"><div class="head"><h3>Cost per paid customer</h3><span>green = beats blended avg</span></div>${cpaRows}</div>
+    <div class="panel"><div class="head"><h3>Activation rate by channel</h3><span>green = beats the ${a.totals.actR.toFixed(0)}% average</span></div>${actRows}</div>
     <div class="panel"><h3>Monthly spend &amp; cost per signup</h3><div class="chart-box"><canvas id="c-acq"></canvas></div></div>
   </div>
   <div class="insight">${bulb}
-    <p><b>Cheap signups aren't cheap customers.</b> Drill into a channel and the spread shows up at ad-group level — the same campaign can carry an efficient ad group and one burning budget on trials that never activate. Judge spend on <b>cost per paid customer</b>, not cost per signup, then cut the bottom quartile and push budget into the ad groups that convert.</p></div>
-  <p class="note">Signups, activation and conversion come from trial records, so they respond to every filter. Spend is booked at campaign level, so it's allocated to the filtered slice in proportion to signups.</p>`;
+    <p><b>Volume at the top says nothing about revenue at the bottom.</b> Switch to <b>Journey</b> and follow a campaign across the stages — some pour in signups that die at stage 2, others carry a thin stream all the way to Closed Won. Judge acquisition on how far its trials <i>travel</i>, not how many arrive. Then move budget to the campaigns whose leads survive.</p></div>
+  <p class="note">Stages, activation, PQL and pipeline come from trial records, so they respond to every filter. Spend is booked at campaign level and allocated to the filtered slice in proportion to signups.</p>`;
 
   const body=document.getElementById('acq-body');
   body.querySelectorAll('tr[data-ch]').forEach(tr=> tr.onclick=()=>{ const c=tr.dataset.ch; acqOpen={ch:acqOpen.ch===c?null:c,cmp:null}; render(); });
   body.querySelectorAll('tr[data-cmp]').forEach(tr=> tr.onclick=e=>{ e.stopPropagation(); const c=tr.dataset.cmp; acqOpen.cmp=acqOpen.cmp===c?null:c; render(); });
+  view.querySelectorAll('.tgl').forEach(b=> b.onclick=()=>{
+    if(b.dataset.mode) acqMode=b.dataset.mode;
+    if(b.dataset.j!=null) acqJourney = b.dataset.j==='1';
+    if(b.dataset.r) acqRow=b.dataset.r;
+    render();
+  });
 
   const lbl=a.trend.labels.map(fmtMonth);
   mkChart('c-acq',{data:{labels:lbl,datasets:[{type:'bar',label:'Spend',data:a.trend.spend,backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:18,yAxisID:'y'},{type:'line',label:'$/signup',data:a.trend.cps,borderColor:'#232323',backgroundColor:'#232323',borderWidth:2,pointRadius:0,tension:.3,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}}},scales:{y:{position:'left',ticks:{callback:v=>'$'+Math.round(v/1000)+'k',font:{size:10},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},y1:{position:'right',min:0,ticks:{callback:v=>'$'+v,font:{size:10},color:'#8B95A6'},grid:{display:false},border:{display:false}},x:{ticks:{font:{size:9},color:'#8B95A6',maxRotation:0,autoSkip:true,maxTicksLimit:8},grid:{display:false},border:{display:false}}}}});
