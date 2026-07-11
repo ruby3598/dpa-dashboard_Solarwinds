@@ -42,19 +42,21 @@
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 17px;}
   .kpi .l{font-size:12.5px;color:var(--text2);margin:0;}
   .kpi .v{font-size:28px;font-weight:600;font-family:var(--disp);margin:7px 0 2px;line-height:1;}
+  .kpi .v.sm{font-size:23px;}
   .kpi .s{font-size:11.5px;color:var(--text3);margin:0;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:17px;}
   .panel h3{font-size:13.5px;font-weight:600;margin:0 0 15px;font-family:var(--font);}
-  .panel .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:15px;}
+  .panel .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:15px;gap:10px;}
   .panel .head h3{margin:0;}
-  .panel .head span{font-size:12px;color:var(--text2);}
+  .panel .head span{font-size:12px;color:var(--text2);text-align:right;}
   .frow{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
   .frow:last-child{margin-bottom:0;}
   .fname{width:76px;font-size:12px;flex-shrink:0;color:var(--text2);}
   .ftrack{flex:1;height:24px;background:#F1F3F6;border-radius:6px;overflow:hidden;}
   .ffill{height:100%;background:var(--sw);border-radius:6px;transition:width .5s ease;}
   .fnum{width:54px;text-align:right;font-size:12px;font-weight:600;flex-shrink:0;}
+  .fstep{width:44px;text-align:right;font-size:11px;color:var(--text3);flex-shrink:0;}
   .insight{background:var(--sw-tint);border:1px solid rgba(255,98,0,.3);border-radius:14px;padding:14px 16px;margin-top:12px;display:flex;gap:11px;align-items:flex-start;}
   .insight svg{flex-shrink:0;margin-top:1px;}
   .insight p{font-size:13.5px;margin:0;line-height:1.5;}
@@ -62,6 +64,16 @@
   .placeholder{background:var(--card);border:1px dashed var(--line2);border-radius:14px;padding:56px 24px;text-align:center;color:var(--text2);}
   .placeholder .n{font-family:var(--disp);font-weight:600;font-size:19px;color:var(--text);margin:0 0 8px;}
   .foot{text-align:center;font-size:12px;color:var(--text3);padding:8px 0 0;}
+  .note{font-size:12px;color:var(--text3);margin:12px 2px 0;}
+  .dtable{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .dtable th{text-align:left;color:var(--text2);font-weight:500;padding:7px 8px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+  .dtable td{padding:8px;border-bottom:1px solid var(--line);}
+  .dtable td.num,.dtable th.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .dtable tr:last-child td{border-bottom:0;}
+  .cmp{display:flex;flex-direction:column;gap:13px;}
+  .cmp .lab{font-size:12px;color:var(--text2);margin-bottom:5px;display:flex;justify-content:space-between;}
+  .cbar{height:26px;background:#F1F3F6;border-radius:6px;overflow:hidden;}
+  .cbar .fill{height:100%;border-radius:6px;display:flex;align-items:center;justify-content:flex-end;padding-right:9px;font-size:11.5px;font-weight:600;color:#fff;min-width:34px;transition:width .5s ease;}
   @media(max-width:760px){ .row2{grid-template-columns:1fr;} .brand .sub{display:none;} }
 </style>
 </head>
@@ -101,15 +113,31 @@ const SUPABASE_URL = "https://xvttafawjwvixalbenie.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh2dHRhZmF3and2aXhhbGJlbmllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3MTM0MTksImV4cCI6MjA5OTI4OTQxOX0.j3mk-7idE3iZxeV_wVo3VK9WrlqwFFdR370HCeas_zc";
 // ======================================================
 
-const FALLBACK = {"kpis":{"conversion":19.0,"trial_duration":11,"cac":49,"abandonment":55.5,"feature_adoption":80},"funnel":[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],"trend":{"labels":["Jan '25","Feb '25","Mar '25","Apr '25","May '25","Jun '25","Jul '25","Aug '25","Sep '25","Oct '25","Nov '25","Dec '25","Jan '26","Feb '26","Mar '26","Apr '26","May '26","Jun '26"],"values":[18.8,19.3,16.4,18.1,21.8,19.2,18.8,19.1,19.9,18.5,19.1,18.1,19.8,20.9,19.0,17.8,20.2,16.4]}};
+// ---- Sample fallbacks (used when no keys / offline). Derived from the real data. ----
+const FB = {
+  overview:{kpis:{conversion:19.0,trial_duration:11,cac:49,abandonment:55.5,feature_adoption:80},funnel:[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],trend:{labels:["Jan '25","Feb '25","Mar '25","Apr '25","May '25","Jun '25","Jul '25","Aug '25","Sep '25","Oct '25","Nov '25","Dec '25","Jan '26","Feb '26","Mar '26","Apr '26","May '26","Jun '26"],values:[18.8,19.3,16.4,18.1,21.8,19.2,18.8,19.1,19.9,18.5,19.1,18.1,19.8,20.9,19.0,17.8,20.2,16.4]}},
+  activation:{funnel:[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],kpis:{act:44.5,tta:28,sh:37.0,saas:73.8},dep:{sh:{inst:61.3,conn:43.3,act:37.0},saas:{inst:100.0,conn:80.0,act:73.8}},reasons:[["no_response",2392],["setup_too_complex",2285],["price",1071],["couldnt_connect_db",905],["missing_db_platform",778],["chose_competitor",665]]},
+  acquisition:{totals:{spend:485530,signups:10000,conv:1904,cps:48.6},channels:[["paid_search",1936,354,148616,77,18.3],["paid_social",1034,140,108071,105,13.5],["events",782,166,96121,123,21.2],["channel_partner",1161,241,57377,49,20.8],["content",1277,228,42437,33,17.9],["organic",2185,419,19301,9,19.2],["referral",497,110,6509,13,22.1],["email",827,169,5470,7,20.4],["direct",301,77,1628,5,25.6]],trend:{labels:["2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"],spend:[18102,18918,20270,21024,24677,22612,27664,26219,26002,28691,28263,32365,34253,31911,33774,35219,37195,18371],cps:[48.7,51.5,51.1,45.2,49.9,47.1,52.5,48.2,46.7,47.7,45.8,48.1,49.8,50.6,47.5,48.1,49.5,47.0]}},
+  engagement:{kpis:{eng:33.3,open:37.2,click:12.7,adopt:79.9},buckets:[["0",14,0.0],["1-20",5562,3.5],["21-40",385,17.4],["41-60",1555,32.3],["61-80",1809,44.3],["81-100",675,49.8]],nurture:[["setup_help_1",10000,36.8,13.0],["setup_help_2",9999,37.3,12.3],["feature_spotlight",9948,37.6,12.9],["trial_ending",8837,36.5,12.3],["extension_offer",847,43.6,16.8]],features:{adoption:79.9,logins:12.4,wait:17.7,tuning:3.8,alerts:2.5,reports:1.9},clickConv:[17.6,21.2]},
+  experiments:{ab:{A:{n:5031,act:42.1,pql:20.8,conv:17.7},B:{n:4969,act:46.9,pql:28.6,conv:20.4},lift:15.3},ext:{no:18.7,yes:23.0,n_yes:847},sales:{self:14.5,assisted:46.5,n_assisted:1415}},
+  pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
+};
 
 const VIEWS = ['Overview','Activation funnel','Acquisition & CAC','Engagement & nurture','Experiments','Pipeline'];
-let TRIALS = null, PUMAP = null, LIVE = false, chart = null, active = 'Overview';
+let TRIALS=null, PUMAP=null, CHANNEL=null, CRM=null, NURTURE=null, SB=null;
+let LIVE=false, active='Overview', charts=[], nurtureLoading=false;
 
 const mean = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
 const median = a => { if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y); const m=Math.floor(s.length/2); return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
 const r1 = x => Math.round(x*10)/10;
+const pct = (a,b) => b ? a/b*100 : 0;
+const usd = n => { n=+n||0; if(n>=1e6) return '$'+(n/1e6).toFixed(1)+'M'; if(n>=1e3) return '$'+Math.round(n/1e3)+'K'; return '$'+Math.round(n); };
 const fmtMonth = ym => { const [y,m]=ym.split('-'); return new Date(y,+m-1,1).toLocaleString('en',{month:'short'})+" '"+y.slice(2); };
+const val = id => document.getElementById(id).value;
+
+const REASON_LABELS={no_response:'No response',setup_too_complex:'Setup too complex',price:'Price',couldnt_connect_db:"Couldn't connect DB",missing_db_platform:'Missing DB platform',chose_competitor:'Chose competitor',trial_expired:'Trial expired',budget_freeze:'Budget freeze'};
+const CH_LABELS={paid_search:'Paid search',paid_social:'Paid social',events:'Events',channel_partner:'Channel partner',content:'Content',organic:'Organic',referral:'Referral',email:'Email',direct:'Direct'};
+const STEP_LABELS={setup_help_1:'Setup help 1',setup_help_2:'Setup help 2',feature_spotlight:'Feature spotlight',trial_ending:'Trial ending',extension_offer:'Extension offer'};
 
 async function fetchAll(sb, table, cols){
   const page=1000; let from=0, out=[];
@@ -127,23 +155,37 @@ async function loadData(){
   if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
   try{
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const [trials, pu] = await Promise.all([
-      fetchAll(sb,'trials','trial_id,product,deployment_type,region,company_size,landing_variant,activated,is_pql,converted,signup_date,cac_usd,time_to_convert_days'),
-      fetchAll(sb,'product_usage','trial_id,installed,db_connected,feature_adoption_rate')
+    SB = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const [trials, pu, channel, crm] = await Promise.all([
+      fetchAll(SB,'trials','trial_id,product,deployment_type,region,company_size,persona,acquisition_channel,landing_variant,activated,is_pql,sales_assisted,trial_extended,converted,signup_date,time_to_convert_days,non_conversion_reason,cac_usd,acv_usd'),
+      fetchAll(SB,'product_usage','trial_id,installed,db_connected,activated,time_to_activate_hrs,feature_adoption_rate,engagement_score,logins,wait_time_analyses_run,tuning_advisors_used,anomaly_alerts_configured,reports_generated'),
+      fetchAll(SB,'channel_performance','month,channel,signups,conversions,spend_usd'),
+      fetchAll(SB,'crm_opportunities','trial_id,product,region,company_size,stage,won,acv_usd,sales_assisted')
     ]);
-    TRIALS = trials; PUMAP = {};
+    TRIALS=trials; CHANNEL=channel; CRM=crm; PUMAP={};
     for(const p of pu) PUMAP[p.trial_id]=p;
     return true;
   }catch(e){ console.warn('Supabase load failed, using sample data:', e.message); return false; }
 }
 
+async function ensureNurture(){
+  if(NURTURE || nurtureLoading || !SB) return;
+  nurtureLoading=true;
+  try{ NURTURE = await fetchAll(SB,'email_nurture','trial_id,email_step,opened,clicked'); }
+  catch(e){ console.warn('nurture load failed', e.message); NURTURE=[]; }
+  nurtureLoading=false;
+  if(active==='Engagement & nurture') render();
+}
+
+const filt = f => TRIALS.filter(r =>
+  (f.product==='all'||r.product===f.product) &&
+  (f.region==='all'||r.region===f.region) &&
+  (f.deployment==='all'||r.deployment_type===f.deployment));
+
+// ---------------- compute (Overview) ----------------
 function compute(f){
-  if(!LIVE || !TRIALS) return FALLBACK;
-  const F = TRIALS.filter(r =>
-    (f.product==='all'||r.product===f.product) &&
-    (f.region==='all'||r.region===f.region) &&
-    (f.deployment==='all'||r.deployment_type===f.deployment));
+  if(!LIVE || !TRIALS) return FB.overview;
+  const F = filt(f);
   const act = mean(F.map(r=>r.activated?1:0))*100;
   const ttc = F.filter(r=>r.converted && r.time_to_convert_days!=null).map(r=>+r.time_to_convert_days);
   const faVals = F.filter(r=>r.activated).map(r=> (PUMAP[r.trial_id]?.feature_adoption_rate ?? 0));
@@ -151,25 +193,96 @@ function compute(f){
   F.forEach(r=>{ if(!r.signup_date) return; const m=String(r.signup_date).slice(0,7); (byM[m]=byM[m]||[]).push(r.converted?1:0); });
   const ms=Object.keys(byM).sort();
   return {
-    kpis:{
-      conversion:r1(mean(F.map(r=>r.converted?1:0))*100),
-      trial_duration:Math.round(median(ttc)),
-      cac:Math.round(mean(F.map(r=>+r.cac_usd||0))),
-      abandonment:r1(100-act),
-      feature_adoption:Math.round(mean(faVals)*100)
-    },
-    funnel:[
-      ['Signed up',F.length],
-      ['Installed',F.filter(r=>PUMAP[r.trial_id]?.installed).length],
-      ['Connected',F.filter(r=>PUMAP[r.trial_id]?.db_connected).length],
-      ['Activated',F.filter(r=>r.activated).length],
-      ['PQL',F.filter(r=>r.is_pql).length],
-      ['Paid',F.filter(r=>r.converted).length]
-    ],
+    kpis:{ conversion:r1(mean(F.map(r=>r.converted?1:0))*100), trial_duration:Math.round(median(ttc)), cac:Math.round(mean(F.map(r=>+r.cac_usd||0))), abandonment:r1(100-act), feature_adoption:Math.round(mean(faVals)*100) },
+    funnel:[['Signed up',F.length],['Installed',F.filter(r=>PUMAP[r.trial_id]?.installed).length],['Connected',F.filter(r=>PUMAP[r.trial_id]?.db_connected).length],['Activated',F.filter(r=>r.activated).length],['PQL',F.filter(r=>r.is_pql).length],['Paid',F.filter(r=>r.converted).length]],
     trend:{labels:ms.map(fmtMonth), values:ms.map(m=>r1(mean(byM[m])*100))}
   };
 }
 
+// ---------------- compute (Activation) ----------------
+function cActivation(f){
+  if(!LIVE || !TRIALS) return FB.activation;
+  const F=filt(f);
+  const funnel=[['Signed up',F.length],['Installed',F.filter(r=>PUMAP[r.trial_id]?.installed).length],['Connected',F.filter(r=>PUMAP[r.trial_id]?.db_connected).length],['Activated',F.filter(r=>r.activated).length],['PQL',F.filter(r=>r.is_pql).length],['Paid',F.filter(r=>r.converted).length]];
+  const tta=F.filter(r=>r.activated).map(r=>+PUMAP[r.trial_id]?.time_to_activate_hrs).filter(x=>x===x && x!=null);
+  const base=TRIALS.filter(r=>(f.product==='all'||r.product===f.product)&&(f.region==='all'||r.region===f.region));
+  const depRates=dt=>{ const d=base.filter(r=>r.deployment_type===dt); const n=d.length||1; return {inst:r1(pct(d.filter(r=>PUMAP[r.trial_id]?.installed).length,n)),conn:r1(pct(d.filter(r=>PUMAP[r.trial_id]?.db_connected).length,n)),act:r1(pct(d.filter(r=>r.activated).length,n))}; };
+  const reasons={};
+  F.filter(r=>!r.converted && r.non_conversion_reason).forEach(r=>reasons[r.non_conversion_reason]=(reasons[r.non_conversion_reason]||0)+1);
+  return { funnel, kpis:{act:r1(pct(F.filter(r=>r.activated).length,F.length)),tta:Math.round(median(tta)),sh:depRates('self_hosted').act,saas:depRates('saas').act}, dep:{sh:depRates('self_hosted'),saas:depRates('saas')}, reasons:Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,6) };
+}
+
+// ---------------- compute (Acquisition — global) ----------------
+function cAcq(){
+  if(!LIVE || !CHANNEL) return FB.acquisition;
+  const by={}; CHANNEL.forEach(r=>{ const o=by[r.channel]=by[r.channel]||{s:0,cv:0,sp:0}; o.s+=+r.signups||0; o.cv+=+r.conversions||0; o.sp+=+r.spend_usd||0; });
+  const channels=Object.entries(by).map(([c,o])=>[c,o.s,o.cv,o.sp,o.s?Math.round(o.sp/o.s):0,r1(pct(o.cv,o.s))]).sort((a,b)=>b[3]-a[3]);
+  const bm={}; CHANNEL.forEach(r=>{ const m=String(r.month).slice(0,7); const o=bm[m]=bm[m]||{sp:0,s:0}; o.sp+=+r.spend_usd||0; o.s+=+r.signups||0; });
+  const ms=Object.keys(bm).sort();
+  const totS=channels.reduce((a,c)=>a+c[1],0), totCv=channels.reduce((a,c)=>a+c[2],0), totSp=channels.reduce((a,c)=>a+c[3],0);
+  return {totals:{spend:totSp,signups:totS,conv:totCv,cps:r1(totS?totSp/totS:0)},channels,trend:{labels:ms,spend:ms.map(m=>bm[m].sp),cps:ms.map(m=>r1(bm[m].s?bm[m].sp/bm[m].s:0))}};
+}
+
+// ---------------- compute (Engagement) ----------------
+function cEng(f){
+  if(!LIVE || !TRIALS) return FB.engagement;
+  const F=filt(f);
+  const eng=F.map(r=>+PUMAP[r.trial_id]?.engagement_score).filter(x=>x===x);
+  const actd=F.filter(r=>r.activated);
+  const B=[['0',-1,0],['1-20',0,20],['21-40',20,40],['41-60',40,60],['61-80',60,80],['81-100',80,100]];
+  const buckets=B.map(([lab,lo,hi])=>{ const d=F.filter(r=>{const s=+PUMAP[r.trial_id]?.engagement_score; return s>lo&&s<=hi;}); return [lab,d.length,r1(pct(d.filter(r=>r.converted).length,d.length))]; });
+  const feat=k=> r1(mean(actd.map(r=>+PUMAP[r.trial_id]?.[k]||0)));
+  const features={adoption:r1(mean(actd.map(r=>+PUMAP[r.trial_id]?.feature_adoption_rate||0))*100),logins:feat('logins'),wait:feat('wait_time_analyses_run'),tuning:feat('tuning_advisors_used'),alerts:feat('anomaly_alerts_configured'),reports:feat('reports_generated')};
+  let nurture=null, clickConv=null, open=null, click=null;
+  if(NURTURE){
+    const ids=new Set(F.map(r=>r.trial_id));
+    const rel=NURTURE.filter(e=>ids.has(e.trial_id));
+    const order=['setup_help_1','setup_help_2','feature_spotlight','trial_ending','extension_offer'];
+    const bs={}; rel.forEach(e=>{const o=bs[e.email_step]=bs[e.email_step]||{s:0,o:0,c:0}; o.s++; if(e.opened)o.o++; if(e.clicked)o.c++;});
+    nurture=order.filter(s=>bs[s]).map(s=>[s,bs[s].s,r1(pct(bs[s].o,bs[s].s)),r1(pct(bs[s].c,bs[s].s))]);
+    open=r1(pct(rel.filter(e=>e.opened).length,rel.length)); click=r1(pct(rel.filter(e=>e.clicked).length,rel.length));
+    const clicked=new Set(rel.filter(e=>e.clicked).map(e=>e.trial_id));
+    const cy=F.filter(r=>clicked.has(r.trial_id)), cn=F.filter(r=>!clicked.has(r.trial_id));
+    clickConv=[r1(pct(cn.filter(r=>r.converted).length,cn.length)),r1(pct(cy.filter(r=>r.converted).length,cy.length))];
+  }
+  return {kpis:{eng:r1(mean(eng)),open,click,adopt:features.adoption},buckets,nurture,features,clickConv};
+}
+
+// ---------------- compute (Experiments) ----------------
+function cExp(f){
+  if(!LIVE || !TRIALS) return FB.experiments;
+  const F=filt(f);
+  const v=x=>{ const d=F.filter(r=>r.landing_variant===x); const n=d.length||1; return {n:d.length,act:r1(pct(d.filter(r=>r.activated).length,n)),pql:r1(pct(d.filter(r=>r.is_pql).length,n)),conv:r1(pct(d.filter(r=>r.converted).length,n))}; };
+  const A=v('A'), Bv=v('B'); const lift=A.conv?r1((Bv.conv-A.conv)/A.conv*100):0;
+  const grp=pred=>{ const d=F.filter(pred); return r1(pct(d.filter(r=>r.converted).length,d.length||1)); };
+  return {ab:{A,B:Bv,lift}, ext:{no:grp(r=>!r.trial_extended),yes:grp(r=>r.trial_extended),n_yes:F.filter(r=>r.trial_extended).length}, sales:{self:grp(r=>!r.sales_assisted),assisted:grp(r=>r.sales_assisted),n_assisted:F.filter(r=>r.sales_assisted).length}};
+}
+
+// ---------------- compute (Pipeline) ----------------
+function cPipe(f){
+  if(!LIVE || !CRM) return FB.pipeline;
+  const O=CRM.filter(o=>(f.product==='all'||o.product===f.product)&&(f.region==='all'||o.region===f.region));
+  const order=['Discovery','Demo/POC','Proposal','Negotiation','Closed Won','Closed Lost'];
+  const sc={}; O.forEach(o=>sc[o.stage]=(sc[o.stage]||0)+1);
+  const stages=order.map(s=>[s,sc[s]||0]);
+  const won=O.filter(o=>o.won);
+  const openStages=new Set(['Discovery','Demo/POC','Proposal','Negotiation']);
+  const kpis={open:O.filter(o=>openStages.has(o.stage)).length,winrate:r1(pct(won.length,O.length)),avg_acv:Math.round(mean(won.map(o=>+o.acv_usd||0))),pipeline_acv:Math.round(won.reduce((a,o)=>a+(+o.acv_usd||0),0))};
+  const bp={}; won.forEach(o=>{const p=bp[o.product]=bp[o.product]||{n:0,acv:0}; p.n++; p.acv+=+o.acv_usd||0;});
+  const byprod=Object.entries(bp).map(([p,o])=>[p,o.n,Math.round(o.acv)]).sort((a,b)=>b[2]-a[2]);
+  const wr={}; O.forEach(o=>{const r=wr[o.region]=wr[o.region]||{w:0,n:0}; r.n++; if(o.won)r.w++;});
+  const winregion=Object.entries(wr).map(([rg,o])=>[rg,r1(pct(o.w,o.n))]).sort((a,b)=>b[1]-a[1]);
+  return {stages,kpis,byprod,winregion};
+}
+
+// ---------------- shared UI helpers ----------------
+const bulb='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#C24A00" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1h6c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>';
+function mkChart(id,cfg){ const el=document.getElementById(id); if(!el||typeof Chart==='undefined') return; charts.push(new Chart(el,cfg)); }
+function clearCharts(){ charts.forEach(c=>{try{c.destroy()}catch(e){}}); charts=[]; }
+const AX={y:{grid:{color:'#EEF1F5'},border:{display:false},ticks:{font:{size:11},color:'#8B95A6'}},x:{grid:{display:false},border:{display:false},ticks:{font:{size:11},color:'#8B95A6'}}};
+function cmpPair(items){ const mx=Math.max(...items.map(i=>i.val),1); return '<div class="cmp">'+items.map(i=>`<div><div class="lab"><span>${i.lab}</span><span>${i.sub}</span></div><div class="cbar"><div class="fill" style="width:${Math.max(i.val/mx*100,6)}%;background:${i.color||'var(--sw)'}">${i.val.toFixed(1)}%</div></div></div>`).join('')+'</div>'; }
+
+// ---------------- Overview ----------------
 function overviewHTML(){
   return `
   <div class="grid-kpi">
@@ -183,48 +296,178 @@ function overviewHTML(){
     <div class="panel"><div class="head"><h3>Activation funnel</h3><span id="fn-note"></span></div><div id="funnel"></div></div>
     <div class="panel"><h3>Conversion by month</h3><div class="chart-box"><canvas id="trend"></canvas></div></div>
   </div>
-  <div class="insight">
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#C24A00" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1h6c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>
+  <div class="insight">${bulb}
     <p><b>Biggest recoverable leak:</b> self-hosted trials abandon at setup — filter Deployment to compare self-hosted vs SaaS activation. Priority levers: in-product setup guidance and a setup-help nurture sequence.</p>
   </div>`;
 }
-
-function render(){
-  const view = document.getElementById('view');
-  if(active !== 'Overview'){
-    const idx = VIEWS.indexOf(active);
-    view.innerHTML = `<div class="placeholder"><p class="n">View ${idx+1} — ${active}</p><p>In build — we're adding the dashboard views one by one.</p></div>`;
-    if(chart){ chart.destroy(); chart=null; }
-    return;
-  }
-  view.innerHTML = overviewHTML();
-  const f = { product:val('f-product'), region:val('f-region'), deployment:val('f-deployment') };
-  const a = compute(f);
+function renderOverview(view,f){
+  view.innerHTML=overviewHTML();
+  const a=compute(f);
   document.getElementById('k-conv').textContent = a.kpis.conversion.toFixed(1)+'%';
   document.getElementById('k-dur').textContent = a.kpis.trial_duration+' days';
   document.getElementById('k-cac').textContent = '$'+a.kpis.cac;
   document.getElementById('k-aband').textContent = a.kpis.abandonment.toFixed(1)+'%';
   document.getElementById('k-feat').textContent = a.kpis.feature_adoption+'%';
   const max = a.funnel[0][1] || 1;
-  document.getElementById('funnel').innerHTML = a.funnel.map(([name,n])=>
-    `<div class="frow"><span class="fname">${name}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(n/max*100,1)}%"></div></div><span class="fnum">${n.toLocaleString()}</span></div>`).join('');
-  const ctx = document.getElementById('trend');
-  if(typeof Chart === 'undefined'){ return; }
-  chart = new Chart(ctx, {
-    type:'bar',
-    data:{ labels:a.trend.labels, datasets:[{ data:a.trend.values, backgroundColor:'#FF6200', borderRadius:3, maxBarThickness:22 }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>c.parsed.y+'% conversion'}}},
-      scales:{ y:{ ticks:{callback:v=>v+'%', font:{size:11}, color:'#8B95A6'}, grid:{color:'#EEF1F5'}, border:{display:false} },
-               x:{ ticks:{font:{size:10}, color:'#8B95A6', maxRotation:0, autoSkip:true, maxTicksLimit:8}, grid:{display:false}, border:{display:false} } } }
-  });
+  document.getElementById('funnel').innerHTML = a.funnel.map(([name,n])=>`<div class="frow"><span class="fname">${name}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(n/max*100,1)}%"></div></div><span class="fnum">${n.toLocaleString()}</span></div>`).join('');
+  mkChart('trend',{type:'bar',data:{labels:a.trend.labels,datasets:[{data:a.trend.values,backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:22}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'% conversion'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:10},color:'#8B95A6',maxRotation:0,autoSkip:true,maxTicksLimit:8},grid:{display:false},border:{display:false}}}}});
 }
 
-const val = id => document.getElementById(id).value;
+// ---------------- Activation funnel ----------------
+function renderActivation(view,f){
+  const a=cActivation(f);
+  const mx=a.funnel[0][1]||1;
+  const funnelRows=a.funnel.map(([n,v],i)=>`<div class="frow"><span class="fname">${n}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(v/mx*100,1)}%"></div></div><span class="fnum">${v.toLocaleString()}</span><span class="fstep">${i===0?'—':pct(v,a.funnel[i-1][1]).toFixed(0)+'%'}</span></div>`).join('');
+  const rmax=a.reasons.length?a.reasons[0][1]:1;
+  const reasonRows=a.reasons.map(([k,v])=>`<div class="frow"><span class="fname" style="width:130px">${REASON_LABELS[k]||k}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(v/rmax*100,2)}%;background:#D64542"></div></div><span class="fnum">${v.toLocaleString()}</span></div>`).join('');
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Activation rate</p><p class="v" style="color:var(--sw)">${a.kpis.act.toFixed(1)}%</p><p class="s">reached first value</p></div>
+    <div class="kpi"><p class="l">Median time to activate</p><p class="v sm">${a.kpis.tta} hrs</p><p class="s">signup → first analysis</p></div>
+    <div class="kpi"><p class="l">Self-hosted activation</p><p class="v" style="color:var(--red)">${a.kpis.sh.toFixed(1)}%</p><p class="s">the setup-friction segment</p></div>
+    <div class="kpi"><p class="l">SaaS activation</p><p class="v" style="color:var(--green)">${a.kpis.saas.toFixed(1)}%</p><p class="s">no install step</p></div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Activation funnel</h3><span>grey % = step conversion</span></div>${funnelRows}</div>
+    <div class="panel"><div class="head"><h3>Where self-hosted falls behind</h3><span>% of segment</span></div><div class="chart-box"><canvas id="c-dep"></canvas></div></div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Why trials don't convert</h3><span>non-converting trials</span></div>${reasonRows}</div>
+    <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
+      <p><b>The leak is setup, not selling.</b> Self-hosted trials activate at ${a.kpis.sh.toFixed(0)}% vs ${a.kpis.saas.toFixed(0)}% for SaaS — the gap opens at install and DB-connect. "Setup too complex" and "couldn't connect DB" lead the drop-off reasons. Levers: in-product setup wizard, a connection health-check, and a self-hosted setup-help nurture track.</p></div></div>
+  </div>`;
+  mkChart('c-dep',{type:'bar',data:{labels:['Installed','Connected','Activated'],datasets:[{label:'Self-hosted',data:[a.dep.sh.inst,a.dep.sh.conn,a.dep.sh.act],backgroundColor:'#D64542',borderRadius:3,maxBarThickness:26},{label:'SaaS',data:[a.dep.saas.inst,a.dep.saas.conn,a.dep.saas.act],backgroundColor:'#12A374',borderRadius:3,maxBarThickness:26}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'%'}}},scales:{y:{max:100,ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:11},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
+}
+
+// ---------------- Acquisition & CAC ----------------
+function renderAcq(view,f){
+  const a=cAcq();
+  const chRows=a.channels.map(c=>`<tr><td>${CH_LABELS[c[0]]||c[0]}</td><td class="num">${usd(c[3])}</td><td class="num">${c[1].toLocaleString()}</td><td class="num">${c[5].toFixed(1)}%</td><td class="num">$${c[4]}</td></tr>`).join('');
+  const cps=[...a.channels].sort((x,y)=>x[4]-y[4]);
+  const cpsMax=Math.max(...cps.map(c=>c[4]),1);
+  const cpsRows=cps.map(c=>`<div class="frow"><span class="fname" style="width:110px">${CH_LABELS[c[0]]||c[0]}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(c[4]/cpsMax*100,2)}%"></div></div><span class="fnum">$${c[4]}</span></div>`).join('');
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Marketing spend</p><p class="v sm">${usd(a.totals.spend)}</p><p class="s">18 months, all channels</p></div>
+    <div class="kpi"><p class="l">Signups</p><p class="v sm">${a.totals.signups.toLocaleString()}</p><p class="s">trials generated</p></div>
+    <div class="kpi"><p class="l">Blended cost / signup</p><p class="v" style="color:var(--sw)">$${a.totals.cps.toFixed(1)}</p><p class="s">spend ÷ signups</p></div>
+    <div class="kpi"><p class="l">Paid conversions</p><p class="v sm">${a.totals.conv.toLocaleString()}</p><p class="s">signups → paid</p></div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Channel efficiency</h3><span>blended across segments</span></div>
+      <table class="dtable"><thead><tr><th>Channel</th><th class="num">Spend</th><th class="num">Signups</th><th class="num">Conv.</th><th class="num">$/signup</th></tr></thead><tbody>${chRows}</tbody></table></div>
+    <div class="panel"><h3>Monthly spend &amp; cost per signup</h3><div class="chart-box"><canvas id="c-acq"></canvas></div></div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Cost per signup by channel</h3><span>cheapest first</span></div>${cpsRows}</div>
+    <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
+      <p><b>Efficient vs expensive.</b> Organic, email and referral bring signups in under $15 each; paid social and events run 7–8× that. Paid search is the biggest line item at a mid ~$77/signup. Shift budget toward the low-CAC channels and treat paid as the scalable top-up.</p></div></div>
+  </div>
+  <p class="note">Channel spend is tracked at the campaign level, so this view is blended across products and regions — the Product / Region / Deployment filters don't reshape it.</p>`;
+  const lbl=a.trend.labels.map(fmtMonth);
+  mkChart('c-acq',{data:{labels:lbl,datasets:[{type:'bar',label:'Spend',data:a.trend.spend,backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:18,yAxisID:'y'},{type:'line',label:'$/signup',data:a.trend.cps,borderColor:'#232323',backgroundColor:'#232323',borderWidth:2,pointRadius:0,tension:.3,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}}},scales:{y:{position:'left',ticks:{callback:v=>'$'+Math.round(v/1000)+'k',font:{size:10},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},y1:{position:'right',min:0,ticks:{callback:v=>'$'+v,font:{size:10},color:'#8B95A6'},grid:{display:false},border:{display:false}},x:{ticks:{font:{size:9},color:'#8B95A6',maxRotation:0,autoSkip:true,maxTicksLimit:8},grid:{display:false},border:{display:false}}}}});
+}
+
+// ---------------- Engagement & nurture ----------------
+function renderEng(view,f){
+  if(LIVE && !NURTURE) ensureNurture();
+  const a=cEng(f);
+  let nurtureHTML;
+  if(a.nurture){
+    nurtureHTML='<table class="dtable"><thead><tr><th>Email step</th><th class="num">Sent</th><th class="num">Open</th><th class="num">Click</th></tr></thead><tbody>'+a.nurture.map(s=>`<tr><td>${STEP_LABELS[s[0]]||s[0]}</td><td class="num">${s[1].toLocaleString()}</td><td class="num">${s[2].toFixed(1)}%</td><td class="num">${s[3].toFixed(1)}%</td></tr>`).join('')+'</tbody></table>';
+  } else { nurtureHTML='<p class="note">Loading nurture data…</p>'; }
+  const featRows=[['Wait-time analyses',a.features.wait],['Logins',a.features.logins],['Tuning advisors',a.features.tuning],['Anomaly alerts',a.features.alerts],['Reports',a.features.reports]];
+  const fmax=Math.max(...featRows.map(r=>r[1]),1);
+  const featHTML=featRows.map(([l,v])=>`<div class="frow"><span class="fname" style="width:130px">${l}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(v/fmax*100,2)}%"></div></div><span class="fnum">${v}</span></div>`).join('');
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Avg engagement score</p><p class="v" style="color:var(--sw)">${a.kpis.eng.toFixed(1)}</p><p class="s">0–100, all trials</p></div>
+    <div class="kpi"><p class="l">Email open rate</p><p class="v sm">${a.kpis.open==null?'…':a.kpis.open.toFixed(1)+'%'}</p><p class="s">across nurture</p></div>
+    <div class="kpi"><p class="l">Email click rate</p><p class="v sm">${a.kpis.click==null?'…':a.kpis.click.toFixed(1)+'%'}</p><p class="s">across nurture</p></div>
+    <div class="kpi"><p class="l">Feature adoption</p><p class="v sm">${a.kpis.adopt.toFixed(1)}%</p><p class="s">of activated trials</p></div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Conversion by engagement score</h3><span>higher score → more likely to buy</span></div><div class="chart-box"><canvas id="c-eng"></canvas></div></div>
+    <div class="panel"><div class="head"><h3>Nurture email performance</h3><span>by sequence step</span></div>${nurtureHTML}</div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Feature usage (activated trials)</h3><span>avg per trial</span></div>${featHTML}</div>
+    <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
+      <p><b>Engagement is the strongest buy signal.</b> Trials scoring 61–80 convert around 44% vs ~3% at the bottom — so the game is moving trials up the engagement curve. The extension-offer email earns the highest open rate, and trials that click any nurture email convert ${a.clickConv?('at '+a.clickConv[1].toFixed(0)+'% vs '+a.clickConv[0].toFixed(0)+'%'):'more'}. Lead with wait-time analysis as the activation "aha".</p></div></div>
+  </div>`;
+  mkChart('c-eng',{type:'bar',data:{labels:a.buckets.map(b=>b[0]),datasets:[{data:a.buckets.map(b=>b[2]),backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:34}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'% convert · '+a.buckets[c.dataIndex][1].toLocaleString()+' trials'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{title:{display:true,text:'engagement score',font:{size:10},color:'#8B95A6'},ticks:{font:{size:10},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
+}
+
+// ---------------- Experiments ----------------
+function renderExp(view,f){
+  const a=cExp(f); const A=a.ab.A, B=a.ab.B;
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Variant A — feature-led</p><p class="v sm">${A.conv.toFixed(1)}%</p><p class="s">${A.n.toLocaleString()} trials · control</p></div>
+    <div class="kpi"><p class="l">Variant B — benefit-led</p><p class="v" style="color:var(--sw)">${B.conv.toFixed(1)}%</p><p class="s">${B.n.toLocaleString()} trials · variant</p></div>
+    <div class="kpi"><p class="l">Conversion lift</p><p class="v" style="color:var(--green)">${a.ab.lift>=0?'+':''}${a.ab.lift.toFixed(1)}%</p><p class="s">B over A</p></div>
+    <div class="kpi"><p class="l">Trial extensions</p><p class="v sm">${a.ext.yes.toFixed(1)}%</p><p class="s">convert vs ${a.ext.no.toFixed(1)}% base</p></div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Landing page A/B — B wins across the funnel</h3><span>A control · B variant</span></div><div class="chart-box"><canvas id="c-ab"></canvas></div></div>
+    <div class="panel"><div class="head"><h3>Other conversion levers</h3><span>paid conversion rate</span></div>
+      ${cmpPair([{lab:'No extension',val:a.ext.no,sub:'baseline',color:'#8B95A6'},{lab:'Trial extended',val:a.ext.yes,sub:a.ext.n_yes.toLocaleString()+' trials',color:'#FF6200'},{lab:'Self-serve',val:a.sales.self,sub:'no sales touch',color:'#8B95A6'},{lab:'Sales-assisted',val:a.sales.assisted,sub:a.sales.n_assisted.toLocaleString()+' trials',color:'#12A374'}])}
+    </div>
+  </div>
+  <div class="insight">${bulb}
+    <p><b>Roadmap signal.</b> The benefit-led page (B) lifts conversion ${a.ab.lift>=0?'+':''}${a.ab.lift.toFixed(0)}% and also improves activation and PQL rate, so the win compounds up-funnel. Trial extensions and sales assist both lift conversion for high-intent trials — strong candidates to formalize into the experimentation roadmap with proper significance testing.</p></div>`;
+  mkChart('c-ab',{type:'bar',data:{labels:['Activation','PQL','Conversion'],datasets:[{label:'A — feature-led',data:[A.act,A.pql,A.conv],backgroundColor:'#8B95A6',borderRadius:3,maxBarThickness:30},{label:'B — benefit-led',data:[B.act,B.pql,B.conv],backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:30}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'%'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:11},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
+}
+
+// ---------------- Pipeline ----------------
+function renderPipe(view,f){
+  const a=cPipe(f);
+  const stMax=Math.max(...a.stages.map(s=>s[1]),1);
+  const stColors={'Closed Won':'#12A374','Closed Lost':'#D64542'};
+  const stRows=a.stages.map(s=>`<div class="frow"><span class="fname" style="width:96px">${s[0]}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(s[1]/stMax*100,2)}%;background:${stColors[s[0]]||'#FF6200'}"></div></div><span class="fnum">${s[1].toLocaleString()}</span></div>`).join('');
+  const prodRows=a.byprod.map(p=>`<tr><td>${p[0]}</td><td class="num">${p[1].toLocaleString()}</td><td class="num">${usd(p[2])}</td></tr>`).join('');
+  const wrMax=Math.max(...a.winregion.map(w=>w[1]),1);
+  const wrRows=a.winregion.map(w=>`<div class="frow"><span class="fname">${w[0]}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(w[1]/wrMax*100,2)}%"></div></div><span class="fnum">${w[1].toFixed(1)}%</span></div>`).join('');
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Open opportunities</p><p class="v sm">${a.kpis.open.toLocaleString()}</p><p class="s">still in pipeline</p></div>
+    <div class="kpi"><p class="l">Win rate</p><p class="v" style="color:var(--sw)">${a.kpis.winrate.toFixed(1)}%</p><p class="s">of closed opps</p></div>
+    <div class="kpi"><p class="l">Avg ACV (won)</p><p class="v sm">${usd(a.kpis.avg_acv)}</p><p class="s">per closed-won deal</p></div>
+    <div class="kpi"><p class="l">Won ACV</p><p class="v sm">${usd(a.kpis.pipeline_acv)}</p><p class="s">total booked</p></div>
+  </div>
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Sales-assisted pipeline by stage</h3><span>green won · red lost</span></div>${stRows}</div>
+    <div class="panel"><div class="head"><h3>Won ACV by product</h3><span>closed-won</span></div>
+      <table class="dtable"><thead><tr><th>Product</th><th class="num">Deals</th><th class="num">ACV</th></tr></thead><tbody>${prodRows}</tbody></table>
+      <div class="head" style="margin:18px 0 12px"><h3>Win rate by region</h3></div>${wrRows}</div>
+  </div>
+  <div class="insight">${bulb}
+    <p><b>Where sales assist pays off.</b> Sales-touched opportunities win ${a.kpis.winrate.toFixed(0)}% of the time at ${usd(a.kpis.avg_acv)} average ACV. Enterprise-heavy products carry the biggest booked ACV, so prioritize timely SDR follow-up on their PQLs. Define the PQL→opportunity handoff so high-intent trials reach sales while the evaluation is still warm.</p></div>
+  <p class="note">Pipeline responds to the Product and Region filters; Deployment doesn't apply to CRM opportunities.</p>`;
+}
+
+// ---------------- router ----------------
+function render(){
+  clearCharts();
+  const view=document.getElementById('view');
+  const f={product:val('f-product'),region:val('f-region'),deployment:val('f-deployment')};
+  try{
+    if(active==='Overview') return renderOverview(view,f);
+    if(active==='Activation funnel') return renderActivation(view,f);
+    if(active==='Acquisition & CAC') return renderAcq(view,f);
+    if(active==='Engagement & nurture') return renderEng(view,f);
+    if(active==='Experiments') return renderExp(view,f);
+    if(active==='Pipeline') return renderPipe(view,f);
+  }catch(e){
+    console.error(e);
+    view.innerHTML=`<div class="placeholder"><p class="n">${active}</p><p>Something went wrong rendering this view. Check the console.</p></div>`;
+  }
+}
 
 function buildTabs(){
-  const t = document.getElementById('tabs');
-  t.innerHTML = VIEWS.map(v=>`<button class="tab${v===active?' active':''}" data-v="${v}">${v}</button>`).join('');
-  t.querySelectorAll('.tab').forEach(b=> b.onclick = ()=>{ active=b.dataset.v; buildTabs(); render(); });
+  const t=document.getElementById('tabs');
+  t.innerHTML=VIEWS.map(v=>`<button class="tab${v===active?' active':''}" data-v="${v}">${v}</button>`).join('');
+  t.querySelectorAll('.tab').forEach(b=> b.onclick=()=>{ active=b.dataset.v; buildTabs(); render(); });
 }
 
 function setSource(){
