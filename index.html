@@ -81,7 +81,31 @@
   .caret{display:inline-block;width:9px;margin-right:6px;color:var(--text3);transition:transform .15s;}
   .caret.open{transform:rotate(90deg);}
   .pillw{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;background:#F1F3F6;color:var(--text2);margin-left:7px;}
-  @media(max-width:760px){ .row2{grid-template-columns:1fr;} .brand .sub{display:none;} }
+  .ins{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:12px;}
+  .ins .top{display:flex;align-items:flex-start;gap:12px;}
+  .rank{width:26px;height:26px;border-radius:8px;background:var(--sw);color:#fff;font-family:var(--disp);font-weight:600;
+        font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .rank.warn{background:var(--char);}
+  .ins h4{font-size:15px;margin:2px 0 0;font-family:var(--disp);font-weight:600;flex:1;}
+  .tags{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;}
+  .tag{font-size:10.5px;padding:3px 9px;border-radius:20px;background:#F1F3F6;color:var(--text2);white-space:nowrap;}
+  .tag.hi{background:rgba(214,69,66,.12);color:#A5322F;}
+  .tag.md{background:rgba(255,98,0,.13);color:var(--swk);}
+  .tag.lo{background:rgba(18,163,116,.13);color:#0B7A56;}
+  .ins .ev{font-size:13.5px;color:var(--text2);line-height:1.55;margin:11px 0 0;}
+  .ins .ev b{color:var(--text);}
+  .acts{margin:13px 0 0;padding:0;list-style:none;}
+  .acts li{font-size:13.5px;line-height:1.5;padding:4px 0 4px 20px;position:relative;}
+  .acts li:before{content:'';position:absolute;left:4px;top:11px;width:5px;height:5px;border-radius:50%;background:var(--sw);}
+  .impact{display:flex;gap:22px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line);flex-wrap:wrap;}
+  .impact div{min-width:96px;}
+  .impact .n{font-family:var(--disp);font-weight:600;font-size:19px;margin:0;}
+  .impact .c{font-size:11px;color:var(--text3);margin:2px 0 0;}
+  .recap{background:var(--char);border-radius:14px;padding:18px 20px;color:#fff;}
+  .recap h3{margin:0 0 6px;font-family:var(--disp);font-size:15px;}
+  .recap p{margin:0;font-size:13.5px;line-height:1.6;color:#D6D9DE;}
+  .recap b{color:#fff;}
+  @media(max-width:760px){ .row2{grid-template-columns:1fr;} .brand .sub{display:none;} .ins .top{flex-wrap:wrap;} }
 </style>
 </head>
 <body>
@@ -130,7 +154,7 @@ const FB = {
   pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
 };
 
-const VIEWS = ['Overview','Activation funnel','Acquisition & CAC','Engagement & nurture','Experiments','Pipeline'];
+const VIEWS = ['Overview','Activation funnel','Acquisition & CAC','Engagement & nurture','Experiments','Pipeline','Insights'];
 let TRIALS=null, PUMAP=null, CHANNEL=null, CAMPAIGN=null, CRM=null, NURTURE=null, SB=null;
 let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
@@ -577,6 +601,139 @@ function renderPipe(view,f){
   <p class="note">Pipeline responds to the Product and Region filters; Deployment doesn't apply to CRM opportunities.</p>`;
 }
 
+// ---------------- Insights & recommendations ----------------
+function cInsights(f){
+  if(!HAVE()) return null;
+  const F=filt(f), n=F.length||1;
+  const won=F.filter(r=>r.converted);
+  const ACV = won.length ? mean(won.map(r=>+r.acv_usd||0)) : 9729;
+  const money = x => x>=1e6 ? '$'+(x/1e6).toFixed(1)+'M' : '$'+Math.round(x/1e3)+'K';
+
+  const base=TRIALS.filter(r=>(f.product==='all'||r.product===f.product)&&(f.region==='all'||r.region===f.region));
+  const sh=base.filter(r=>r.deployment_type==='self_hosted'), sa=base.filter(r=>r.deployment_type==='saas');
+  const shAct=mean(sh.map(r=>r.activated?1:0)), saAct=mean(sa.map(r=>r.activated?1:0));
+  const shActive=sh.filter(r=>r.activated);
+  const convIfAct = shActive.length ? mean(shActive.map(r=>r.converted?1:0)) : 0;
+  const gap = saAct-shAct;
+  // only valid if the slice actually contains both deployment types to compare
+  const cmpOK = sh.length>=30 && sa.length>=30 && gap>0;
+  const addAct = cmpOK ? sh.length*gap*0.5 : 0;
+  const addCust1 = addAct*convIfAct;
+
+  // engagement
+  const es = r=>+PUMAP[r.trial_id]?.engagement_score;
+  const low=F.filter(r=>es(r)<=20), mid=F.filter(r=>es(r)>20&&es(r)<=40);
+  const lowC=low.length?mean(low.map(r=>r.converted?1:0)):0, midC=mid.length?mean(mid.map(r=>r.converted?1:0)):0;
+  const addCust2 = Math.max(low.length*0.10*(midC-lowC),0);
+
+  // landing page
+  const A=F.filter(r=>r.landing_variant==='A'), B=F.filter(r=>r.landing_variant==='B');
+  const aC=A.length?mean(A.map(r=>r.converted?1:0)):0, bC=B.length?mean(B.map(r=>r.converted?1:0)):0;
+  const addCust3 = Math.max(A.length*(bC-aC),0);
+  const lift = aC ? (bC-aC)/aC*100 : 0;
+
+  // sales assist among PQLs — selection effect check
+  const pql=F.filter(r=>r.is_pql);
+  const pqlS=pql.filter(r=>r.sales_assisted), pqlN=pql.filter(r=>!r.sales_assisted);
+  const pqlSc=pqlS.length?mean(pqlS.map(r=>r.converted?1:0))*100:0;
+  const pqlNc=pqlN.length?mean(pqlN.map(r=>r.converted?1:0))*100:0;
+  const naiveS=mean(F.filter(r=>r.sales_assisted).map(r=>r.converted?1:0))*100;
+  const naiveN=mean(F.filter(r=>!r.sales_assisted).map(r=>r.converted?1:0))*100;
+
+  // acquisition waste — worst cost per customer
+  const acq=cAcq(f);
+  let worst=null, best=null;
+  if(acq && acq.channels.length){
+    const withConv=acq.channels.filter(c=>c.conv>=5);
+    if(withConv.length){
+      const s=[...withConv].sort((x,y)=>x.cpa-y.cpa);
+      best=s[0]; worst=s[s.length-1];
+    }
+  }
+  const waste = worst && best ? worst.spend*(1-best.cpa/worst.cpa) : 0;
+
+  const reasons={};
+  F.filter(r=>!r.converted&&r.non_conversion_reason).forEach(r=>reasons[r.non_conversion_reason]=(reasons[r.non_conversion_reason]||0)+1);
+  const setupReasons=(reasons['setup_too_complex']||0)+(reasons['couldnt_connect_db']||0);
+
+  return {n,ACV,money,
+    conv:mean(F.map(r=>r.converted?1:0))*100, act:mean(F.map(r=>r.activated?1:0))*100,
+    shAct:shAct*100, saAct:saAct*100, gap:gap*100, convIfAct:convIfAct*100, cmpOK,
+    addCust1, addAct, setupReasons,
+    lowN:low.length, lowC:lowC*100, midC:midC*100, addCust2,
+    aC:aC*100, bC:bC*100, lift, addCust3, aN:A.length,
+    pqlSc, pqlNc, naiveS, naiveN, pqlN:pqlN.length,
+    worst, best, waste};
+}
+
+function renderInsights(view,f){
+  const a=cInsights(f);
+  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Insights</p><p>Loading data…</p></div>'; return; }
+  const M=a.money, num=x=>Math.round(x).toLocaleString();
+  const CH=c=>CH_LABELS[c]||c;
+
+  const cards=[];
+
+  if(a.cmpOK) cards.push({r:1,t:'Setup friction is the single biggest leak',tags:[['High impact','hi'],['Product + Lifecycle','']],
+    ev:`Self-hosted trials activate at <b>${a.shAct.toFixed(1)}%</b> vs <b>${a.saAct.toFixed(1)}%</b> for SaaS — a <b>${a.gap.toFixed(0)}-point gap</b> that opens at install and DB-connect, not at pricing. Crucially, self-hosted trials that <i>do</i> activate convert at <b>${a.convIfAct.toFixed(1)}%</b>. The demand is real; the onboarding is what's failing. <b>${num(a.setupReasons)}</b> non-converters cite setup complexity or a failed DB connection.`,
+    acts:['Ship a guided setup wizard with a connection health-check and pre-flight requirements check.',
+          'Trigger a self-hosted-only "stuck at install" email + in-app nudge at the 24h no-connect mark.',
+          'Offer a one-click hosted sandbox so evaluation can start before infrastructure is ready.',
+          'Instrument install → connect → first-analysis as a tracked funnel with alerting on drop.'],
+    imp:[[M(a.addCust1*a.ACV),'ACV opportunity'],['+'+num(a.addCust1),'new customers'],['+'+num(a.addAct),'activations'],['Closing half the gap','assumption']]});
+
+  cards.push({r:cards.length+1,t:'Engagement predicts revenue — so engineer engagement',tags:[['High impact','hi'],['Lifecycle','']],
+    ev:`Conversion climbs from <b>${a.lowC.toFixed(1)}%</b> at the bottom of the engagement curve to <b>${a.midC.toFixed(1)}%</b> in the next band and beyond 40% at the top. <b>${num(a.lowN)}</b> trials are parked in the lowest band — that is the pool to move. Wait-time analysis is the most-used feature among activated trials and is the clearest "aha" to drive people toward.`,
+    acts:['Define activation as "first wait-time analysis run", not "logged in", and drive the whole onboarding to it.',
+          'Build an engagement score threshold that triggers lifecycle intervention before the trial goes cold.',
+          'Sequence feature nurture toward the aha: wait-time analysis first, tuning advisors second.'],
+    imp:[[M(a.addCust2*a.ACV),'ACV opportunity'],['+'+num(a.addCust2),'new customers'],['10% of low band','assumption']]});
+
+  if(a.addCust3>0) cards.push({r:cards.length+1,t:'Roll out the benefit-led landing page',tags:[['Quick win','lo'],['Growth marketing','']],
+    ev:`Variant B (benefit-led) converts at <b>${a.bC.toFixed(1)}%</b> vs <b>${a.aC.toFixed(1)}%</b> for the feature-led control — a <b>+${a.lift.toFixed(0)}%</b> relative lift. The win isn't only at the bottom: B also improves activation and PQL rate, so the gain compounds up-funnel rather than just shifting who signs up.`,
+    acts:['Ship B to 100% of traffic and retire A.',
+          'Confirm significance and check the lift holds by segment before declaring it a win.',
+          'Apply the benefit-led framing to paid search ad copy and the trial signup flow.'],
+    imp:[[M(a.addCust3*a.ACV),'ACV opportunity'],['+'+num(a.addCust3),'new customers'],['Low','effort']]});
+
+  if(a.worst && a.best && a.worst.channel!==a.best.channel) cards.push({r:cards.length+1,t:'Reallocate paid spend on cost per customer, not cost per signup',tags:[['Medium impact','md'],['Growth marketing','']],
+    ev:`<b>${CH(a.best.channel)}</b> buys a paying customer for <b>$${num(a.best.cpa)}</b>. <b>${CH(a.worst.channel)}</b> pays <b>$${num(a.worst.cpa)}</b> for the same outcome while spending <b>${M(a.worst.spend)}</b>. Cheap signups are not cheap customers — the gap only shows up once you follow the trial through to paid. Drill into the ad-group level and the spread widens again inside a single campaign.`,
+    acts:['Re-target paid budgets against cost per paid customer as the primary bidding metric.',
+          'Cut the bottom-quartile ad groups and reinvest into the ones that convert.',
+          'Pipe activation and conversion events back into the ad platforms so bidding optimises on revenue, not signups.'],
+    imp:[[M(a.waste),'reallocatable spend'],['$'+num(a.worst.cpa)+' → $'+num(a.best.cpa),'cost per customer'],['Medium','effort']]});
+
+  cards.push({r:cards.length+1,t:'Careful: sales-assist is a selection effect, not a lever',tags:[['Caveat','']],warn:true,
+    ev:`Headline numbers say sales-assisted trials convert at <b>${a.naiveS.toFixed(1)}%</b> vs <b>${a.naiveN.toFixed(1)}%</b> self-serve — a tempting case for more reps. But hold intent constant and it collapses: <b>among PQLs</b>, sales-assisted converts at <b>${a.pqlSc.toFixed(1)}%</b> vs <b>${a.pqlNc.toFixed(1)}%</b> without a rep. Reps are being routed to trials that were already going to buy. The gap measures routing, not persuasion.`,
+    acts:['Don\'t scale headcount on this number — the causal read is unproven.',
+          'Run a proper holdout: randomly withhold sales touch from a slice of PQLs and measure the true incremental lift.',
+          'Until then, spend the coverage on the ' + num(a.pqlN) + ' PQLs with no touch at all, and measure.'],
+    imp:[[a.pqlSc.toFixed(1)+'% vs '+a.pqlNc.toFixed(1)+'%','PQL conv, assisted vs not'],['~0','proven incremental lift'],['Test first','recommendation']]});
+
+  const total = (a.addCust1 + a.addCust2 + a.addCust3) * a.ACV;
+  const recap = a.cmpOK
+    ? `The conversion problem is not a <i>selling</i> problem — it is an <i>onboarding</i> problem. Trials that reach first value convert at healthy rates; the majority never get there, and the drop happens at install and database connection, concentrated in self-hosted deployments. Fixing setup, then engineering engagement, is worth roughly <b>${M(total)}</b> in annual contract value before a single extra dollar of ad spend.`
+    : `This slice contains only one deployment type, so the self-hosted vs SaaS setup comparison is switched off here — clear the Deployment filter to see it. Within this slice the levers that still apply are engagement and the landing-page rollout, worth roughly <b>${M(total)}</b> in annual contract value.`;
+
+  view.innerHTML = `
+  <div class="recap">
+    <h3>What the data says</h3>
+    <p>Across <b>${num(a.n)}</b> trials in this slice, <b>${a.act.toFixed(1)}%</b> activate and <b>${a.conv.toFixed(1)}%</b> convert to paid. ${recap}</p>
+  </div>
+  ${cards.map(c=>`
+  <div class="ins">
+    <div class="top">
+      <div class="rank${c.warn?' warn':''}">${c.warn?'!':c.r}</div>
+      <h4>${c.t}</h4>
+      <div class="tags">${c.tags.map(t=>`<span class="tag ${t[1]}">${t[0]}</span>`).join('')}</div>
+    </div>
+    <p class="ev">${c.ev}</p>
+    <ul class="acts">${c.acts.map(x=>`<li>${x}</li>`).join('')}</ul>
+    <div class="impact">${c.imp.map(i=>`<div><p class="n">${i[0]}</p><p class="c">${i[1]}</p></div>`).join('')}</div>
+  </div>`).join('')}
+  <p class="note">Impact figures are directional sizings, computed live from the filtered dataset at an average won ACV of $${num(a.ACV)}. They size the prize to prioritise work — they are not forecasts, and each assumes the stated capture rate.</p>`;
+}
+
 // ---------------- router ----------------
 function render(){
   clearCharts();
@@ -589,6 +746,7 @@ function render(){
     if(active==='Engagement & nurture') return renderEng(view,f);
     if(active==='Experiments') return renderExp(view,f);
     if(active==='Pipeline') return renderPipe(view,f);
+    if(active==='Insights') return renderInsights(view,f);
   }catch(e){
     console.error(e);
     view.innerHTML=`<div class="placeholder"><p class="n">${active}</p><p>Something went wrong rendering this view. Check the console.</p></div>`;
