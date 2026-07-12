@@ -33,6 +33,13 @@
   .filter-in label{font-size:12px;color:var(--text2);margin-right:-6px;}
   select{font-family:var(--font);font-size:13px;color:var(--text);background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;cursor:pointer;}
   select:disabled{opacity:.5;cursor:not-allowed;}
+  input[type=date]{font-family:var(--font);font-size:12.5px;color:var(--text);background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:5px 8px;cursor:pointer;}
+  input[type=date]:disabled{opacity:.5;}
+  .arrowto{color:var(--text3);font-size:12px;margin:0 -4px;}
+  .qk{font-family:var(--font);font-size:11.5px;padding:5px 9px;border:1px solid var(--line2);background:var(--card);color:var(--text2);border-radius:8px;cursor:pointer;}
+  .qk:hover{border-color:var(--sw);color:var(--sw);}
+  .qk.on{background:var(--sw);color:#fff;border-color:var(--sw);}
+  .fcount{font-size:11.5px;color:var(--text3);margin-left:2px;}
   .src{margin-left:auto;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:7px;}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--text3);}
   .dot.live{background:var(--green);} .dot.sample{background:var(--sw);}
@@ -144,14 +151,10 @@
     <select id="f-region"><option value="all">All</option><option>NAM</option><option>EMEA</option><option>APAC</option><option>LATAM</option></select>
     <label>Deployment</label>
     <select id="f-deployment"><option value="all">All</option><option value="self_hosted">Self-hosted</option><option value="saas">SaaS</option></select>
-    <label>Period</label>
-    <select id="f-period">
-      <option value="all">All time</option>
-      <option value="1">Last month</option>
-      <option value="3">Last 3 months</option>
-      <option value="6">Last 6 months</option>
-      <option value="12">Last 12 months</option>
-    </select>
+    <label>Signed up</label>
+    <input type="date" id="f-from"><span class="arrowto">→</span><input type="date" id="f-to">
+    <button class="qk" data-days="30">30d</button><button class="qk" data-days="90">90d</button><button class="qk" data-days="180">6m</button><button class="qk" data-days="0">All</button>
+    <span id="f-count" class="fcount"></span>
     <span class="src"><span class="dot" id="src-dot"></span><span id="src-text">Loading…</span></span>
   </div>
 </div>
@@ -263,6 +266,11 @@ async function loadSnapshot(){
     CHANNEL=S.channel.map(r=>({month:r[0],channel:r[1],signups:r[2],conversions:r[3],spend_usd:r[4]}));
     CAMPAIGN=S.campaign.map(r=>({month:r[0],channel:r[1],campaign:r[2],ad_group:r[3],impressions:r[4],clicks:r[5],spend_usd:r[6],signups:r[7],activated:r[8],conversions:r[9]}));
     CRM=S.crm.map(r=>({product:r[0],region:r[1],stage:r[2],won:!!r[3],acv_usd:r[4],trial_id:r[5]!=null?('T'+r[5]):null}));
+    if(S.base_date && T.dayoff){
+      const b=new Date(S.base_date+'T00:00:00');
+      for(let i=0;i<n;i++){ const d=new Date(b); d.setDate(d.getDate()+T.dayoff[i]);
+        TRIALS[i].signup_date = d.toISOString().slice(0,10); }
+    }
     const NS=S.nurture;
     NURTURE=NS.t.map((ti,i)=>({trial_id:'T'+ti,email_step:NS.steps[NS.s[i]],opened:!!(NS.f[i]&1),clicked:!!(NS.f[i]&2)}));
     return true;
@@ -289,21 +297,14 @@ async function ensureNurture(){
   if(active==='Engagement & nurture') render();
 }
 
-let MAXMONTH=null;
-function monthsBack(n){
-  if(!MAXMONTH) return null;
-  const [y,m]=MAXMONTH.split('-').map(Number);
-  const d=new Date(y,m-1,1); d.setMonth(d.getMonth()-(n-1));
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-}
-const filt = f => {
-  const from = (f.period && f.period!=='all') ? monthsBack(+f.period) : null;
-  return TRIALS.filter(r =>
-    (f.product==='all'||r.product===f.product) &&
+let DMIN=null, DMAX=null;
+const filt = f => TRIALS.filter(r => {
+  const d = String(r.signup_date).slice(0,10);
+  return (f.product==='all'||r.product===f.product) &&
     (f.region==='all'||r.region===f.region) &&
     (f.deployment==='all'||r.deployment_type===f.deployment) &&
-    (!from || String(r.signup_date).slice(0,7) >= from));
-};
+    (!f.from || d >= f.from) && (!f.to || d <= f.to);
+});
 
 // ---------------- compute (Overview) ----------------
 function compute(f){
@@ -990,7 +991,10 @@ function renderInsights(view,f){
 function render(){
   clearCharts();
   const view=document.getElementById('view');
-  const f={product:val('f-product'),region:val('f-region'),deployment:val('f-deployment'),period:val('f-period')};
+  const f={product:val('f-product'),region:val('f-region'),deployment:val('f-deployment'),
+           from:val('f-from')||null, to:val('f-to')||null};
+  const cEl=document.getElementById('f-count');
+  if(cEl && HAVE()) cEl.textContent = filt(f).length.toLocaleString()+' trials';
   try{
     if(active==='Overview') return renderOverview(view,f);
     if(active==='Activation funnel') return renderActivation(view,f);
@@ -1016,10 +1020,26 @@ function setSource(){
   if(SOURCE==='live'){ dot.className='dot live'; txt.textContent='Live · Supabase'; }
   else if(SOURCE==='snapshot'){ dot.className='dot live'; txt.textContent='Snapshot · full dataset'; }
   else{ dot.className='dot sample'; txt.textContent='Sample data'; 
-    ['f-product','f-region','f-deployment','f-period'].forEach(id=>document.getElementById(id).disabled=true); }
+    ['f-product','f-region','f-deployment','f-from','f-to'].forEach(id=>document.getElementById(id).disabled=true); }
 }
 
-['f-product','f-region','f-deployment','f-period'].forEach(id=>document.getElementById(id).addEventListener('change', render));
+['f-product','f-region','f-deployment','f-from','f-to'].forEach(id=>document.getElementById(id).addEventListener('change', ()=>{
+  document.querySelectorAll('.qk').forEach(b=>b.classList.remove('on'));
+  render();
+}));
+document.querySelectorAll('.qk').forEach(btn=> btn.onclick=()=>{
+  document.querySelectorAll('.qk').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const days=+btn.dataset.days;
+  if(!days){ document.getElementById('f-from').value=DMIN||''; document.getElementById('f-to').value=DMAX||''; }
+  else{
+    const end=new Date(DMAX+'T00:00:00'); const start=new Date(end); start.setDate(start.getDate()-(days-1));
+    const lo=new Date(DMIN+'T00:00:00');
+    document.getElementById('f-from').value=(start<lo?lo:start).toISOString().slice(0,10);
+    document.getElementById('f-to').value=DMAX;
+  }
+  render();
+});
 
 (async function init(){
   buildTabs();
@@ -1027,7 +1047,12 @@ function setSource(){
   else if(await loadSnapshot()) SOURCE='snapshot';
   else                          SOURCE='sample';
   if(TRIALS && TRIALS.length){
-    MAXMONTH = TRIALS.reduce((mx,r)=>{ const m=String(r.signup_date).slice(0,7); return m>mx?m:mx; },'0000-00');
+    const ds=TRIALS.map(r=>String(r.signup_date).slice(0,10)).filter(Boolean);
+    DMIN=ds.reduce((a,b)=>b<a?b:a); DMAX=ds.reduce((a,b)=>b>a?b:a);
+    const fEl=document.getElementById('f-from'), tEl=document.getElementById('f-to');
+    fEl.min=tEl.min=DMIN; fEl.max=tEl.max=DMAX;
+    fEl.value=DMIN; tEl.value=DMAX;
+    document.querySelector('.qk[data-days="0"]').classList.add('on');
   }
   setSource();
   render();
