@@ -158,7 +158,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // ---- Sample fallbacks (used when no keys / offline). Derived from the real data. ----
 const FB = {
   overview:{kpis:{conversion:19.0,trial_duration:11,cac:49,abandonment:55.5,feature_adoption:80},funnel:[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],trend:{labels:["Jan '25","Feb '25","Mar '25","Apr '25","May '25","Jun '25","Jul '25","Aug '25","Sep '25","Oct '25","Nov '25","Dec '25","Jan '26","Feb '26","Mar '26","Apr '26","May '26","Jun '26"],values:[18.8,19.3,16.4,18.1,21.8,19.2,18.8,19.1,19.9,18.5,19.1,18.1,19.8,20.9,19.0,17.8,20.2,16.4]}},
-  activation:{funnel:[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],kpis:{act:44.5,tta:28,sh:37.0,saas:73.8},dep:{sh:{inst:61.3,conn:43.3,act:37.0},saas:{inst:100.0,conn:80.0,act:73.8}},reasons:[["no_response",2392],["setup_too_complex",2285],["price",1071],["couldnt_connect_db",905],["missing_db_platform",778],["chose_competitor",665]]},
+  activation:{funnel:[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],kpis:{act:44.5,tta:28,sh:37.0,saas:73.8,shN:7976,saasN:2024},dep:{sh:{inst:61.3,conn:43.3,act:37.0},saas:{inst:100.0,conn:80.0,act:73.8}},reasons:[["no_response",2392],["setup_too_complex",2285],["price",1071],["couldnt_connect_db",905],["missing_db_platform",778],["chose_competitor",665]]},
   acquisition:{totals:{spend:485530,signups:10000,conv:1904,cps:48.6},channels:[["paid_search",1936,354,148616,77,18.3],["paid_social",1034,140,108071,105,13.5],["events",782,166,96121,123,21.2],["channel_partner",1161,241,57377,49,20.8],["content",1277,228,42437,33,17.9],["organic",2185,419,19301,9,19.2],["referral",497,110,6509,13,22.1],["email",827,169,5470,7,20.4],["direct",301,77,1628,5,25.6]],trend:{labels:["2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"],spend:[18102,18918,20270,21024,24677,22612,27664,26219,26002,28691,28263,32365,34253,31911,33774,35219,37195,18371],cps:[48.7,51.5,51.1,45.2,49.9,47.1,52.5,48.2,46.7,47.7,45.8,48.1,49.8,50.6,47.5,48.1,49.5,47.0]}},
   retention:{days:14,all:[61.2,44.7,38.8,33.3,28.5,24.9,21.8,18.6,15.8,13.3,12.2,9.8,8.0,7.2],
     conv:[93.6,85.7,74.8,65.9,59.1,51.7,44.6,39.9,34.4,28.8,26.2,20.3,18.2,15.4],
@@ -305,10 +305,14 @@ function cActivation(f){
   const funnel=[['Signed up',F.length],['Installed',F.filter(r=>PUMAP[r.trial_id]?.installed).length],['Connected',F.filter(r=>PUMAP[r.trial_id]?.db_connected).length],['Activated',F.filter(r=>r.activated).length],['PQL',F.filter(r=>r.is_pql).length],['Paid',F.filter(r=>r.converted).length]];
   const tta=F.filter(r=>r.activated).map(r=>+PUMAP[r.trial_id]?.time_to_activate_hrs).filter(x=>x===x && x!=null);
   const base=TRIALS.filter(r=>(f.product==='all'||r.product===f.product)&&(f.region==='all'||r.region===f.region));
-  const depRates=dt=>{ const d=base.filter(r=>r.deployment_type===dt); const n=d.length||1; return {inst:r1(pct(d.filter(r=>PUMAP[r.trial_id]?.installed).length,n)),conn:r1(pct(d.filter(r=>PUMAP[r.trial_id]?.db_connected).length,n)),act:r1(pct(d.filter(r=>r.activated).length,n))}; };
+  const depRates=dt=>{ const d=base.filter(r=>r.deployment_type===dt); const n=d.length||1;
+    return {n:d.length, inst:r1(pct(d.filter(r=>PUMAP[r.trial_id]?.installed).length,n)),conn:r1(pct(d.filter(r=>PUMAP[r.trial_id]?.db_connected).length,n)),act:r1(pct(d.filter(r=>r.activated).length,n))}; };
   const reasons={};
   F.filter(r=>!r.converted && r.non_conversion_reason).forEach(r=>reasons[r.non_conversion_reason]=(reasons[r.non_conversion_reason]||0)+1);
-  return { funnel, kpis:{act:r1(pct(F.filter(r=>r.activated).length,F.length)),tta:Math.round(median(tta)),sh:depRates('self_hosted').act,saas:depRates('saas').act}, dep:{sh:depRates('self_hosted'),saas:depRates('saas')}, reasons:Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,6) };
+  const SH=depRates('self_hosted'), SA=depRates('saas');
+  return { funnel, kpis:{act:r1(pct(F.filter(r=>r.activated).length,F.length)),tta:Math.round(median(tta)),
+    sh:SH.act, saas:SA.act, shN:SH.n, saasN:SA.n},
+    dep:{sh:SH,saas:SA}, reasons:Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,6) };
 }
 
 // ---------------- compute (Acquisition — drill-down) ----------------
@@ -520,19 +524,32 @@ function renderActivation(view,f){
   <div class="grid-kpi">
     <div class="kpi"><p class="l">Activation rate</p><p class="v" style="color:var(--sw)">${a.kpis.act.toFixed(1)}%</p><p class="s">reached first value</p></div>
     <div class="kpi"><p class="l">Median time to activate</p><p class="v sm">${a.kpis.tta} hrs</p><p class="s">signup → first analysis</p></div>
-    <div class="kpi"><p class="l">Self-hosted activation</p><p class="v" style="color:var(--red)">${a.kpis.sh.toFixed(1)}%</p><p class="s">the setup-friction segment</p></div>
-    <div class="kpi"><p class="l">SaaS activation</p><p class="v" style="color:var(--green)">${a.kpis.saas.toFixed(1)}%</p><p class="s">no install step</p></div>
+    <div class="kpi"><p class="l">Self-hosted activation</p>
+      <p class="v" style="color:${a.kpis.shN?'var(--red)':'var(--text3)'}">${a.kpis.shN? a.kpis.sh.toFixed(1)+'%' : '—'}</p>
+      <p class="s">${a.kpis.shN? 'the setup-friction segment' : 'no self-hosted trials in this slice'}</p></div>
+    <div class="kpi"><p class="l">SaaS activation</p>
+      <p class="v" style="color:${a.kpis.saasN?'var(--green)':'var(--text3)'}">${a.kpis.saasN? a.kpis.saas.toFixed(1)+'%' : '—'}</p>
+      <p class="s">${a.kpis.saasN? 'no install step' : 'no SaaS trials in this slice'}</p></div>
   </div>
   <div class="row2">
     <div class="panel"><div class="head"><h3>Activation funnel</h3><span>grey % = step conversion</span></div>${funnelRows}</div>
-    <div class="panel"><div class="head"><h3>Where self-hosted falls behind</h3><span>% of segment</span></div><div class="chart-box"><canvas id="c-dep"></canvas></div></div>
+    <div class="panel"><div class="head"><h3>${(a.kpis.shN&&a.kpis.saasN)?'Where self-hosted falls behind':'Setup steps for this slice'}</h3><span>% of segment</span></div>
+      ${(a.kpis.shN&&a.kpis.saasN)?'<div class="chart-box"><canvas id="c-dep"></canvas></div>'
+        :`<div class="chart-box"><canvas id="c-dep"></canvas></div>
+          <p class="note">This product ships in one deployment model only, so there is no comparison to draw here. Clear the Product filter to compare self-hosted against SaaS.</p>`}</div>
   </div>
   <div class="row2">
     <div class="panel"><div class="head"><h3>Why trials don't convert</h3><span>non-converting trials</span></div>${reasonRows}</div>
     <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
-      <p><b>The leak is setup, not selling.</b> Self-hosted trials activate at ${a.kpis.sh.toFixed(0)}% vs ${a.kpis.saas.toFixed(0)}% for SaaS — the gap opens at install and DB-connect. "Setup too complex" and "couldn't connect DB" lead the drop-off reasons. Levers: in-product setup wizard, a connection health-check, and a self-hosted setup-help nurture track.</p></div></div>
+      ${(a.kpis.shN&&a.kpis.saasN)
+        ? `<p><b>The leak is setup, not selling.</b> Self-hosted trials activate at ${a.kpis.sh.toFixed(0)}% vs ${a.kpis.saas.toFixed(0)}% for SaaS — the gap opens at install and DB-connect. "Setup too complex" and "couldn't connect DB" lead the drop-off reasons. Levers: in-product setup wizard, a connection health-check, and a self-hosted setup-help nurture track.</p>`
+        : `<p><b>Deployment and product are the same variable.</b> DPA and SQL Sentry ship self-hosted only; DPM ships SaaS only — there is no overlap, so a single-product view has nothing to compare against. That also means the activation gap cannot be cleanly attributed to setup friction alone: "self-hosted" and "not DPM" are statistically indistinguishable here. What the drop-off reasons do show is that "setup too complex" and "couldn't connect DB" dominate — which points at setup rather than product quality.</p>`}
+    </div></div>
   </div>`;
-  mkChart('c-dep',{type:'bar',data:{labels:['Installed','Connected','Activated'],datasets:[{label:'Self-hosted',data:[a.dep.sh.inst,a.dep.sh.conn,a.dep.sh.act],backgroundColor:'#D64542',borderRadius:3,maxBarThickness:26},{label:'SaaS',data:[a.dep.saas.inst,a.dep.saas.conn,a.dep.saas.act],backgroundColor:'#12A374',borderRadius:3,maxBarThickness:26}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'%'}}},scales:{y:{max:100,ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:11},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
+  const depSets=[];
+  if(a.kpis.shN) depSets.push({label:'Self-hosted',data:[a.dep.sh.inst,a.dep.sh.conn,a.dep.sh.act],backgroundColor:'#D64542',borderRadius:3,maxBarThickness:26});
+  if(a.kpis.saasN) depSets.push({label:'SaaS',data:[a.dep.saas.inst,a.dep.saas.conn,a.dep.saas.act],backgroundColor:'#12A374',borderRadius:3,maxBarThickness:26});
+  mkChart('c-dep',{type:'bar',data:{labels:['Installed','Connected','Activated'],datasets:depSets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'%'}}},scales:{y:{max:100,ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:11},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
 }
 
 // ---------------- Acquisition & CAC ----------------
