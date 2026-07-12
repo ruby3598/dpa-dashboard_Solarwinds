@@ -92,6 +92,11 @@
   .win{text-align:right;font-weight:600;font-size:12.5px;}
   .dtable th.ctr{text-align:center;}
   .stagehead{border-left:2px solid var(--sw);}
+  .retstrip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 16px;padding:13px 15px;background:#FAFBFC;border:1px solid var(--line);border-radius:12px;}
+  .retstrip>div{display:flex;flex-direction:column;gap:3px;}
+  .retstrip .rv{font-family:var(--disp);font-weight:600;font-size:23px;line-height:1;}
+  .retstrip .rl{font-size:11px;color:var(--text2);line-height:1.35;}
+  .retstrip .arrw{color:var(--text3);font-size:15px;padding:0 10px;}
   .ins{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:12px;}
   .ins .top{display:flex;align-items:flex-start;gap:12px;}
   .rank{width:26px;height:26px;border-radius:8px;background:var(--sw);color:#fff;font-family:var(--disp);font-weight:600;
@@ -139,6 +144,14 @@
     <select id="f-region"><option value="all">All</option><option>NAM</option><option>EMEA</option><option>APAC</option><option>LATAM</option></select>
     <label>Deployment</label>
     <select id="f-deployment"><option value="all">All</option><option value="self_hosted">Self-hosted</option><option value="saas">SaaS</option></select>
+    <label>Period</label>
+    <select id="f-period">
+      <option value="all">All time</option>
+      <option value="1">Last month</option>
+      <option value="3">Last 3 months</option>
+      <option value="6">Last 6 months</option>
+      <option value="12">Last 12 months</option>
+    </select>
     <span class="src"><span class="dot" id="src-dot"></span><span id="src-text">Loading…</span></span>
   </div>
 </div>
@@ -276,10 +289,21 @@ async function ensureNurture(){
   if(active==='Engagement & nurture') render();
 }
 
-const filt = f => TRIALS.filter(r =>
-  (f.product==='all'||r.product===f.product) &&
-  (f.region==='all'||r.region===f.region) &&
-  (f.deployment==='all'||r.deployment_type===f.deployment));
+let MAXMONTH=null;
+function monthsBack(n){
+  if(!MAXMONTH) return null;
+  const [y,m]=MAXMONTH.split('-').map(Number);
+  const d=new Date(y,m-1,1); d.setMonth(d.getMonth()-(n-1));
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+const filt = f => {
+  const from = (f.period && f.period!=='all') ? monthsBack(+f.period) : null;
+  return TRIALS.filter(r =>
+    (f.product==='all'||r.product===f.product) &&
+    (f.region==='all'||r.region===f.region) &&
+    (f.deployment==='all'||r.deployment_type===f.deployment) &&
+    (!from || String(r.signup_date).slice(0,7) >= from));
+};
 
 // ---------------- compute (Overview) ----------------
 function compute(f){
@@ -708,8 +732,19 @@ function renderEng(view,f){
     <div class="kpi"><p class="l">Email open rate</p><p class="v sm">${a.kpis.open==null?'…':a.kpis.open.toFixed(1)+'%'}</p><p class="s">across nurture</p></div>
   </div>
   <div class="panel" style="margin-top:12px">
-    <div class="head"><h3>Trial engagement over the 14-day window<span class="pillw">who is still awake?</span></h3><span>% of trials active each day · dashed lines = nurture emails</span></div>
-    <div class="chart-box" style="height:260px"><canvas id="c-ret"></canvas></div>
+    <div class="head"><h3>Trial engagement over the 14-day window<span class="pillw">who is still awake?</span></h3>
+      <span>% of trials active on each day of their own trial</span></div>
+    <div class="retstrip">
+      <div><span class="rv" style="color:var(--red)">${R.dead.toFixed(0)}%</span><span class="rl">never came back<br>after signing up</span></div>
+      <div class="arrw">→</div>
+      <div><span class="rv">${(100-R.all[0]).toFixed(0)}%</span><span class="rl">already gone<br>by end of day 1</span></div>
+      <div class="arrw">→</div>
+      <div><span class="rv" style="color:var(--sw)">${(100-R.all[2]).toFixed(0)}%</span><span class="rl">already gone<br>by day 3</span></div>
+      <div class="arrw">→</div>
+      <div><span class="rv" style="color:var(--red)">${aliveAtEnding.toFixed(0)}%</span><span class="rl">still alive when<br>"trial ending" sends</span></div>
+    </div>
+    <div class="chart-box" style="height:300px"><canvas id="c-ret"></canvas></div>
+    <p class="note">The shaded band is the first 72 hours — where the trial is effectively decided. Converted trials are still ${R.conv[2].toFixed(0)}% active on day 3; trials that never convert are already down to ${R.nonconv[2].toFixed(0)}%.</p>
   </div>
   <div class="insight">${bulb}
     <p><b>The nurture is talking to an empty room.</b> ${R.dead.toFixed(0)}% of trials never log in at all after signing up, and by day ${R.emails.trial_ending||12} — when the "trial ending" email fires — only <b>${aliveAtEnding.toFixed(0)}%</b> are still active. Open rate hides this: opening an email is not the same as returning to the product. The trial runs 14 days, but self-hosted setup depends on IT approval cycles measured in weeks. <b>Front-load the help, or start the clock at first successful install rather than at signup.</b></p></div>
@@ -723,25 +758,49 @@ function renderEng(view,f){
       <p><b>Engagement is the strongest buy signal.</b> Trials scoring 61–80 convert around 44% vs ~3% at the bottom — so the game is moving trials up the engagement curve. The extension-offer email earns the highest open rate, and trials that click any nurture email convert ${a.clickConv?('at '+a.clickConv[1].toFixed(0)+'% vs '+a.clickConv[0].toFixed(0)+'%'):'more'}. Lead with wait-time analysis as the activation "aha".</p></div></div>
   </div>`;
   const rl=Array.from({length:R.days},(_,i)=>'Day '+(i+1));
+  const endDay=R.emails.trial_ending||12;
   mkChart('c-ret',{type:'line',data:{labels:rl,datasets:[
-      {label:'Converted',data:R.conv,borderColor:'#12A374',backgroundColor:'#12A374',borderWidth:2,pointRadius:0,tension:.25},
-      {label:'All trials',data:R.all,borderColor:'#FF6200',backgroundColor:'#FF6200',borderWidth:2.5,pointRadius:0,tension:.25},
-      {label:'Did not convert',data:R.nonconv,borderColor:'#D64542',backgroundColor:'#D64542',borderWidth:2,borderDash:[4,3],pointRadius:0,tension:.25}
+      {label:'Trials that converted',data:R.conv,borderColor:'#12A374',backgroundColor:'rgba(18,163,116,.07)',borderWidth:2.5,pointRadius:0,pointHoverRadius:4,tension:.25,fill:true},
+      {label:'All trials',data:R.all,borderColor:'#FF6200',backgroundColor:'transparent',borderWidth:3,pointRadius:0,pointHoverRadius:4,tension:.25},
+      {label:'Trials that never converted',data:R.nonconv,borderColor:'#D64542',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,pointHoverRadius:4,tension:.25}
     ]},options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},
-        tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'% active'}}},
-      scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},
-        x:{ticks:{font:{size:10},color:'#8B95A6',maxRotation:0,autoSkip:false,callback:function(v,i){return (i+1)%2===0||i===0?'D'+(i+1):'';}},grid:{display:false},border:{display:false}}}},
-    plugins:[{id:'mails',afterDatasetsDraw(ch){
-      const {ctx,chartArea:{top,bottom},scales:{x}}=ch;
-      emailDays.forEach(([name,d])=>{ if(d<1||d>R.days) return;
-        const px=x.getPixelForValue(d-1);
-        ctx.save(); ctx.strokeStyle='#8B95A6'; ctx.setLineDash([3,3]); ctx.lineWidth=1;
-        ctx.beginPath(); ctx.moveTo(px,top); ctx.lineTo(px,bottom); ctx.stroke();
-        ctx.setLineDash([]); ctx.fillStyle='#586475'; ctx.font='9px Inter'; ctx.textAlign='center';
-        ctx.fillText((STEP_LABELS[name]||name).replace('Setup help','Setup'),px,top-3);
-        ctx.restore(); });
-    }}]});
+      layout:{padding:{top:26,right:8}},
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'top',align:'start',labels:{boxWidth:12,boxHeight:2,font:{size:11.5},padding:14,usePointStyle:false}},
+        tooltip:{callbacks:{title:c=>'Day '+(c[0].dataIndex+1)+' of the trial',label:c=>c.dataset.label+': '+c.parsed.y+'% still active'}}},
+      scales:{y:{min:0,max:100,title:{display:true,text:'% of trials still active',font:{size:11},color:'#586475'},
+          ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6',stepSize:25},grid:{color:'#EEF1F5'},border:{display:false}},
+        x:{title:{display:true,text:'day of the trial (not calendar date)',font:{size:10.5},color:'#8B95A6'},
+          ticks:{font:{size:10.5},color:'#8B95A6',maxRotation:0,autoSkip:false,callback:(v,i)=>'D'+(i+1)},grid:{display:false},border:{display:false}}}},
+    plugins:[{id:'ann',beforeDatasetsDraw(ch){
+        const {ctx,chartArea:{top,bottom},scales:{x}}=ch;
+        const x0=x.getPixelForValue(0), x2=x.getPixelForValue(2);
+        ctx.save(); ctx.fillStyle='rgba(255,98,0,.055)';
+        ctx.fillRect(x0,top,x2-x0,bottom-top);
+        ctx.fillStyle='#C24A00'; ctx.font='600 10px Inter'; ctx.textAlign='center';
+        ctx.fillText('the trial is decided here', (x0+x2)/2, top-12);
+        ctx.restore();
+      },
+      afterDatasetsDraw(ch){
+        const {ctx,chartArea:{top,bottom},scales:{x,y}}=ch;
+        emailDays.forEach(([name,d])=>{ if(d<1||d>R.days) return;
+          const px=x.getPixelForValue(d-1);
+          ctx.save(); ctx.strokeStyle='#C3CAD4'; ctx.setLineDash([3,3]); ctx.lineWidth=1;
+          ctx.beginPath(); ctx.moveTo(px,top); ctx.lineTo(px,bottom); ctx.stroke(); ctx.restore();
+        });
+        // callout on the trial-ending email
+        const px=x.getPixelForValue(endDay-1), py=y.getPixelForValue(R.all[endDay-1]);
+        ctx.save();
+        ctx.fillStyle='#D64542'; ctx.beginPath(); ctx.arc(px,py,4.5,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#D64542'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(px,py-8); ctx.lineTo(px,py-30); ctx.stroke();
+        const txt='"trial ending" email — only '+R.all[endDay-1].toFixed(0)+'% still here';
+        ctx.font='600 10.5px Inter'; const w=ctx.measureText(txt).width+14;
+        let bx=px-w/2; bx=Math.max(ch.chartArea.left+2, Math.min(bx, ch.chartArea.right-w-2));
+        ctx.fillStyle='#D64542'; ctx.beginPath(); ctx.roundRect(bx,py-48,w,19,5); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.fillText(txt,bx+w/2,py-35);
+        ctx.restore();
+      }}]});
 
   mkChart('c-eng',{type:'bar',data:{labels:a.buckets.map(b=>b[0]),datasets:[{data:a.buckets.map(b=>b[2]),backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:34}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'% convert · '+a.buckets[c.dataIndex][1].toLocaleString()+' trials'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{title:{display:true,text:'engagement score',font:{size:10},color:'#8B95A6'},ticks:{font:{size:10},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
 }
@@ -931,7 +990,7 @@ function renderInsights(view,f){
 function render(){
   clearCharts();
   const view=document.getElementById('view');
-  const f={product:val('f-product'),region:val('f-region'),deployment:val('f-deployment')};
+  const f={product:val('f-product'),region:val('f-region'),deployment:val('f-deployment'),period:val('f-period')};
   try{
     if(active==='Overview') return renderOverview(view,f);
     if(active==='Activation funnel') return renderActivation(view,f);
@@ -957,16 +1016,19 @@ function setSource(){
   if(SOURCE==='live'){ dot.className='dot live'; txt.textContent='Live · Supabase'; }
   else if(SOURCE==='snapshot'){ dot.className='dot live'; txt.textContent='Snapshot · full dataset'; }
   else{ dot.className='dot sample'; txt.textContent='Sample data'; 
-    ['f-product','f-region','f-deployment'].forEach(id=>document.getElementById(id).disabled=true); }
+    ['f-product','f-region','f-deployment','f-period'].forEach(id=>document.getElementById(id).disabled=true); }
 }
 
-['f-product','f-region','f-deployment'].forEach(id=>document.getElementById(id).addEventListener('change', render));
+['f-product','f-region','f-deployment','f-period'].forEach(id=>document.getElementById(id).addEventListener('change', render));
 
 (async function init(){
   buildTabs();
   if(await loadLive())          SOURCE='live';
   else if(await loadSnapshot()) SOURCE='snapshot';
   else                          SOURCE='sample';
+  if(TRIALS && TRIALS.length){
+    MAXMONTH = TRIALS.reduce((mx,r)=>{ const m=String(r.signup_date).slice(0,7); return m>mx?m:mx; },'0000-00');
+  }
   setSource();
   render();
 })();
