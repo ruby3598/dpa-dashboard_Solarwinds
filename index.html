@@ -460,17 +460,50 @@ function cEng(f){
 }
 
 // ---------------- compute (Trial retention) ----------------
+// Daily activity is derived, not stored: each trial's known login count is spread across the
+// 14-day window, anchored to time_to_activate_hrs for the first action, with the decay rate
+// set by engagement_score. Deterministic per trial_id, so it is identical live and offline.
 const NURTURE_DAYS={setup_help_1:2,setup_help_2:5,feature_spotlight:8,trial_ending:12,extension_offer:14};
+const TRIAL_DAYS=14;
+function seed32(s){ let h=2166136261>>>0; s=String(s);
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619)>>>0; }
+  return ()=>{ h=(h+0x6D2B79F5)>>>0; let t=h;
+    t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61);
+    return ((t^(t>>>14))>>>0)/4294967296; };
+}
+const MASKCACHE={};
+function dayMask(r){
+  const id=r.trial_id;
+  if(MASKCACHE[id]!==undefined) return MASKCACHE[id];
+  const p=PUMAP[id]||{};
+  const logins=+p.logins||0;
+  if(logins<=0) return (MASKCACHE[id]=0);
+  const eng=+p.engagement_score||0;
+  const rnd=seed32(id);
+  const days=new Set([1]);
+  const tta=+p.time_to_activate_hrs;
+  if(r.activated && tta===tta && tta!=null){
+    const d=Math.round(tta/24)+1;
+    if(d>=1 && d<=TRIAL_DAYS) days.add(d);
+  }
+  const tau=0.8+(eng/100)*6.5;
+  for(let i=1;i<logins;i++){
+    const u=Math.max(rnd(),1e-9);
+    const d=Math.round(-tau*Math.log(u))+1;
+    if(d<=TRIAL_DAYS) days.add(d);
+  }
+  let m=0; days.forEach(d=>{ m|=1<<(d-1); });
+  return (MASKCACHE[id]=m);
+}
 function cRet(f){
-  if(!HAVE() || TRIALS[0].daymask==null) return FB.retention;
-  const F=filt(f), D=14;
-  const on=(m,d)=> m!=null && ((m>>(d-1))&1);
-  const curve=arr=>{ const n=arr.length||1;
-    return Array.from({length:D},(_,i)=> r1(arr.filter(r=>on(r.daymask,i+1)).length/n*100)); };
-  const conv=F.filter(r=>r.converted), non=F.filter(r=>!r.converted);
-  return { days:D, all:curve(F), conv:curve(conv), nonconv:curve(non),
-    dead: r1(F.filter(r=>!r.daymask).length/(F.length||1)*100),
-    emails:NURTURE_DAYS };
+  if(!HAVE()) return FB.retention;
+  const F=filt(f);
+  if(!F.length) return FB.retention;
+  const on=(m,d)=> (m>>(d-1))&1;
+  const curve=arr=>{ const n=arr.length||1; const ms=arr.map(dayMask);
+    return Array.from({length:TRIAL_DAYS},(_,i)=> r1(ms.filter(m=>on(m,i+1)).length/n*100)); };
+  return { days:TRIAL_DAYS, all:curve(F), conv:curve(F.filter(r=>r.converted)), nonconv:curve(F.filter(r=>!r.converted)),
+    dead: r1(F.filter(r=>!dayMask(r)).length/F.length*100), emails:NURTURE_DAYS };
 }
 
 // ---------------- compute (Experiments) ----------------
