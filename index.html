@@ -765,7 +765,7 @@ function renderEng(view,f){
       {label:'All trials',data:R.all,borderColor:'#FF6200',backgroundColor:'transparent',borderWidth:3,pointRadius:0,pointHoverRadius:4,tension:.25},
       {label:'Trials that never converted',data:R.nonconv,borderColor:'#D64542',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,pointHoverRadius:4,tension:.25}
     ]},options:{responsive:true,maintainAspectRatio:false,
-      layout:{padding:{top:26,right:8}},
+      layout:{padding:{top:6,right:8}},
       interaction:{mode:'index',intersect:false},
       plugins:{legend:{position:'top',align:'start',labels:{boxWidth:12,boxHeight:2,font:{size:11.5},padding:14,usePointStyle:false}},
         tooltip:{callbacks:{title:c=>'Day '+(c[0].dataIndex+1)+' of the trial',label:c=>c.dataset.label+': '+c.parsed.y+'% still active'}}},
@@ -776,10 +776,13 @@ function renderEng(view,f){
     plugins:[{id:'ann',beforeDatasetsDraw(ch){
         const {ctx,chartArea:{top,bottom},scales:{x}}=ch;
         const x0=x.getPixelForValue(0), x2=x.getPixelForValue(2);
-        ctx.save(); ctx.fillStyle='rgba(255,98,0,.055)';
+        ctx.save();
+        ctx.fillStyle='rgba(255,98,0,.06)';
         ctx.fillRect(x0,top,x2-x0,bottom-top);
-        ctx.fillStyle='#C24A00'; ctx.font='600 10px Inter'; ctx.textAlign='center';
-        ctx.fillText('the trial is decided here', (x0+x2)/2, top-12);
+        ctx.fillStyle='#C24A00'; ctx.font='600 10px Inter'; ctx.textAlign='left';
+        ctx.fillText('first 72 hours', x0+7, top+13);
+        ctx.fillStyle='#8B95A6'; ctx.font='9.5px Inter';
+        ctx.fillText('the trial is decided here', x0+7, top+26);
         ctx.restore();
       },
       afterDatasetsDraw(ch){
