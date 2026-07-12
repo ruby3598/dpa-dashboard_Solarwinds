@@ -160,6 +160,10 @@ const FB = {
   overview:{kpis:{conversion:19.0,trial_duration:11,cac:49,abandonment:55.5,feature_adoption:80},funnel:[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],trend:{labels:["Jan '25","Feb '25","Mar '25","Apr '25","May '25","Jun '25","Jul '25","Aug '25","Sep '25","Oct '25","Nov '25","Dec '25","Jan '26","Feb '26","Mar '26","Apr '26","May '26","Jun '26"],values:[18.8,19.3,16.4,18.1,21.8,19.2,18.8,19.1,19.9,18.5,19.1,18.1,19.8,20.9,19.0,17.8,20.2,16.4]}},
   activation:{funnel:[["Signed up",10000],["Installed",6910],["Connected",5073],["Activated",4447],["PQL",2465],["Paid",1904]],kpis:{act:44.5,tta:28,sh:37.0,saas:73.8},dep:{sh:{inst:61.3,conn:43.3,act:37.0},saas:{inst:100.0,conn:80.0,act:73.8}},reasons:[["no_response",2392],["setup_too_complex",2285],["price",1071],["couldnt_connect_db",905],["missing_db_platform",778],["chose_competitor",665]]},
   acquisition:{totals:{spend:485530,signups:10000,conv:1904,cps:48.6},channels:[["paid_search",1936,354,148616,77,18.3],["paid_social",1034,140,108071,105,13.5],["events",782,166,96121,123,21.2],["channel_partner",1161,241,57377,49,20.8],["content",1277,228,42437,33,17.9],["organic",2185,419,19301,9,19.2],["referral",497,110,6509,13,22.1],["email",827,169,5470,7,20.4],["direct",301,77,1628,5,25.6]],trend:{labels:["2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"],spend:[18102,18918,20270,21024,24677,22612,27664,26219,26002,28691,28263,32365,34253,31911,33774,35219,37195,18371],cps:[48.7,51.5,51.1,45.2,49.9,47.1,52.5,48.2,46.7,47.7,45.8,48.1,49.8,50.6,47.5,48.1,49.5,47.0]}},
+  retention:{days:14,all:[61.2,44.7,38.8,33.3,28.5,24.9,21.8,18.6,15.8,13.3,12.2,9.8,8.0,7.2],
+    conv:[93.6,85.7,74.8,65.9,59.1,51.7,44.6,39.9,34.4,28.8,26.2,20.3,18.2,15.4],
+    nonconv:[53.5,35.0,30.3,25.6,21.3,18.7,16.5,13.6,11.4,9.7,8.8,7.4,5.5,5.3],
+    dead:38.8, emails:{setup_help_1:2,setup_help_2:5,feature_spotlight:8,trial_ending:12,extension_offer:14}},
   engagement:{kpis:{eng:33.3,open:37.2,click:12.7,adopt:79.9},buckets:[["0",14,0.0],["1-20",5562,3.5],["21-40",385,17.4],["41-60",1555,32.3],["61-80",1809,44.3],["81-100",675,49.8]],nurture:[["setup_help_1",10000,36.8,13.0],["setup_help_2",9999,37.3,12.3],["feature_spotlight",9948,37.6,12.9],["trial_ending",8837,36.5,12.3],["extension_offer",847,43.6,16.8]],features:{adoption:79.9,logins:12.4,wait:17.7,tuning:3.8,alerts:2.5,reports:1.9},clickConv:[17.6,21.2]},
   experiments:{ab:{A:{n:5031,act:42.1,pql:20.8,conv:17.7},B:{n:4969,act:46.9,pql:28.6,conv:20.4},lift:15.3},ext:{no:18.7,yes:23.0,n_yes:847},sales:{self:14.5,assisted:46.5,n_assisted:1415}},
   pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
@@ -235,7 +239,8 @@ async function loadSnapshot(){
         campaign:dec('campaign',i),landing_variant:dec('landing_variant',i),non_conversion_reason:dec('non_conversion_reason',i),
         signup_date:dec('month',i)+'-01',activated:!!T.activated[i],is_pql:!!T.is_pql[i],converted:!!T.converted[i],
         sales_assisted:!!T.sales_assisted[i],trial_extended:!!T.trial_extended[i],
-        cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null});
+        cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null,
+        daymask:T.daymask?T.daymask[i]:null});
       PUMAP[id]={trial_id:id,installed:!!T.installed[i],db_connected:!!T.db_connected[i],
         time_to_activate_hrs:T.time_to_activate_hrs[i],feature_adoption_rate:T.feature_adoption_rate[i],
         engagement_score:T.engagement_score[i],logins:T.logins[i],wait_time_analyses_run:T.wait_time_analyses_run[i],
@@ -423,6 +428,20 @@ function cEng(f){
     clickConv=[r1(pct(cn.filter(r=>r.converted).length,cn.length)),r1(pct(cy.filter(r=>r.converted).length,cy.length))];
   }
   return {kpis:{eng:r1(mean(eng)),open,click,adopt:features.adoption},buckets,nurture,features,clickConv};
+}
+
+// ---------------- compute (Trial retention) ----------------
+const NURTURE_DAYS={setup_help_1:2,setup_help_2:5,feature_spotlight:8,trial_ending:12,extension_offer:14};
+function cRet(f){
+  if(!HAVE() || TRIALS[0].daymask==null) return FB.retention;
+  const F=filt(f), D=14;
+  const on=(m,d)=> m!=null && ((m>>(d-1))&1);
+  const curve=arr=>{ const n=arr.length||1;
+    return Array.from({length:D},(_,i)=> r1(arr.filter(r=>on(r.daymask,i+1)).length/n*100)); };
+  const conv=F.filter(r=>r.converted), non=F.filter(r=>!r.converted);
+  return { days:D, all:curve(F), conv:curve(conv), nonconv:curve(non),
+    dead: r1(F.filter(r=>!r.daymask).length/(F.length||1)*100),
+    emails:NURTURE_DAYS };
 }
 
 // ---------------- compute (Experiments) ----------------
@@ -659,13 +678,24 @@ function renderEng(view,f){
   const featRows=[['Wait-time analyses',a.features.wait],['Logins',a.features.logins],['Tuning advisors',a.features.tuning],['Anomaly alerts',a.features.alerts],['Reports',a.features.reports]];
   const fmax=Math.max(...featRows.map(r=>r[1]),1);
   const featHTML=featRows.map(([l,v])=>`<div class="frow"><span class="fname" style="width:130px">${l}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(v/fmax*100,2)}%"></div></div><span class="fnum">${v}</span></div>`).join('');
+  const R=cRet(f);
+  const emailDays=Object.entries(R.emails);
+  const aliveAtEnding = R.all[(R.emails.trial_ending||12)-1];
+
   view.innerHTML=`
   <div class="grid-kpi">
+    <div class="kpi"><p class="l">Never returned</p><p class="v" style="color:var(--red)">${R.dead.toFixed(1)}%</p><p class="s">signed up, never logged in</p></div>
+    <div class="kpi"><p class="l">Still active, day 14</p><p class="v sm">${R.all[13].toFixed(1)}%</p><p class="s">last day of trial</p></div>
+    <div class="kpi"><p class="l">Alive when "trial ending" sends</p><p class="v" style="color:var(--red)">${aliveAtEnding.toFixed(1)}%</p><p class="s">day ${R.emails.trial_ending||12}</p></div>
     <div class="kpi"><p class="l">Avg engagement score</p><p class="v" style="color:var(--sw)">${a.kpis.eng.toFixed(1)}</p><p class="s">0–100, all trials</p></div>
     <div class="kpi"><p class="l">Email open rate</p><p class="v sm">${a.kpis.open==null?'…':a.kpis.open.toFixed(1)+'%'}</p><p class="s">across nurture</p></div>
-    <div class="kpi"><p class="l">Email click rate</p><p class="v sm">${a.kpis.click==null?'…':a.kpis.click.toFixed(1)+'%'}</p><p class="s">across nurture</p></div>
-    <div class="kpi"><p class="l">Feature adoption</p><p class="v sm">${a.kpis.adopt.toFixed(1)}%</p><p class="s">of activated trials</p></div>
   </div>
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Trial engagement over the 14-day window<span class="pillw">who is still awake?</span></h3><span>% of trials active each day · dashed lines = nurture emails</span></div>
+    <div class="chart-box" style="height:260px"><canvas id="c-ret"></canvas></div>
+  </div>
+  <div class="insight">${bulb}
+    <p><b>The nurture is talking to an empty room.</b> ${R.dead.toFixed(0)}% of trials never log in at all after signing up, and by day ${R.emails.trial_ending||12} — when the "trial ending" email fires — only <b>${aliveAtEnding.toFixed(0)}%</b> are still active. Open rate hides this: opening an email is not the same as returning to the product. The trial runs 14 days, but self-hosted setup depends on IT approval cycles measured in weeks. <b>Front-load the help, or start the clock at first successful install rather than at signup.</b></p></div>
   <div class="row2">
     <div class="panel"><div class="head"><h3>Conversion by engagement score</h3><span>higher score → more likely to buy</span></div><div class="chart-box"><canvas id="c-eng"></canvas></div></div>
     <div class="panel"><div class="head"><h3>Nurture email performance</h3><span>by sequence step</span></div>${nurtureHTML}</div>
@@ -675,6 +705,27 @@ function renderEng(view,f){
     <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
       <p><b>Engagement is the strongest buy signal.</b> Trials scoring 61–80 convert around 44% vs ~3% at the bottom — so the game is moving trials up the engagement curve. The extension-offer email earns the highest open rate, and trials that click any nurture email convert ${a.clickConv?('at '+a.clickConv[1].toFixed(0)+'% vs '+a.clickConv[0].toFixed(0)+'%'):'more'}. Lead with wait-time analysis as the activation "aha".</p></div></div>
   </div>`;
+  const rl=Array.from({length:R.days},(_,i)=>'Day '+(i+1));
+  mkChart('c-ret',{type:'line',data:{labels:rl,datasets:[
+      {label:'Converted',data:R.conv,borderColor:'#12A374',backgroundColor:'#12A374',borderWidth:2,pointRadius:0,tension:.25},
+      {label:'All trials',data:R.all,borderColor:'#FF6200',backgroundColor:'#FF6200',borderWidth:2.5,pointRadius:0,tension:.25},
+      {label:'Did not convert',data:R.nonconv,borderColor:'#D64542',backgroundColor:'#D64542',borderWidth:2,borderDash:[4,3],pointRadius:0,tension:.25}
+    ]},options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'% active'}}},
+      scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},
+        x:{ticks:{font:{size:10},color:'#8B95A6',maxRotation:0,autoSkip:false,callback:function(v,i){return (i+1)%2===0||i===0?'D'+(i+1):'';}},grid:{display:false},border:{display:false}}}},
+    plugins:[{id:'mails',afterDatasetsDraw(ch){
+      const {ctx,chartArea:{top,bottom},scales:{x}}=ch;
+      emailDays.forEach(([name,d])=>{ if(d<1||d>R.days) return;
+        const px=x.getPixelForValue(d-1);
+        ctx.save(); ctx.strokeStyle='#8B95A6'; ctx.setLineDash([3,3]); ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(px,top); ctx.lineTo(px,bottom); ctx.stroke();
+        ctx.setLineDash([]); ctx.fillStyle='#586475'; ctx.font='9px Inter'; ctx.textAlign='center';
+        ctx.fillText((STEP_LABELS[name]||name).replace('Setup help','Setup'),px,top-3);
+        ctx.restore(); });
+    }}]});
+
   mkChart('c-eng',{type:'bar',data:{labels:a.buckets.map(b=>b[0]),datasets:[{data:a.buckets.map(b=>b[2]),backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:34}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'% convert · '+a.buckets[c.dataIndex][1].toLocaleString()+' trials'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{title:{display:true,text:'engagement score',font:{size:10},color:'#8B95A6'},ticks:{font:{size:10},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
 }
 
