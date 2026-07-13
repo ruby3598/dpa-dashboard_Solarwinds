@@ -128,7 +128,23 @@
   .recap h3{margin:0 0 6px;font-family:var(--disp);font-size:15px;}
   .recap p{margin:0;font-size:13.5px;line-height:1.6;color:#D6D9DE;}
   .recap b{color:#fff;}
-  @media(max-width:760px){ .row2{grid-template-columns:1fr;} .brand .sub{display:none;} .ins .top{flex-wrap:wrap;} }
+  .audbar{display:flex;gap:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:5px;margin-bottom:14px;overflow-x:auto;}
+  .aud{flex:1;min-width:150px;display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+       background:transparent;border:0;border-radius:10px;padding:10px 14px;cursor:pointer;font-family:var(--font);text-align:left;transition:background .15s;}
+  .aud:hover{background:#F6F7F9;}
+  .aud.on{background:var(--char);}
+  .aud .at{font-family:var(--disp);font-weight:600;font-size:13.5px;color:var(--text);}
+  .aud .as{font-size:11px;color:var(--text3);}
+  .aud.on .at{color:#fff;} .aud.on .as{color:#A9AFB8;}
+  .bigpair{display:flex;align-items:center;gap:18px;padding:10px 0 4px;}
+  .bigpair .bl{font-size:11.5px;color:var(--text3);margin:0;}
+  .bigpair .bv{font-family:var(--disp);font-weight:600;font-size:30px;line-height:1.1;margin:3px 0;}
+  .bigpair .bs{font-size:11.5px;color:var(--text2);margin:0;}
+  .bigpair .bx{font-size:13px;color:var(--text3);padding:0 4px;}
+  .warnbox{background:rgba(214,69,66,.08);border:1px solid rgba(214,69,66,.25);border-radius:10px;
+           padding:11px 13px;font-size:13px;line-height:1.5;color:var(--text);}
+  .sub2{font-size:10.5px;color:var(--text3);}
+  @media(max-width:760px){ .row2{grid-template-columns:1fr;} .brand .sub{display:none;} .ins .top{flex-wrap:wrap;} .bigpair{flex-wrap:wrap;} }
 </style>
 </head>
 <body>
@@ -225,8 +241,8 @@ async function loadLive(){
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
     SB = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const [trials, pu, channel, crm] = await Promise.all([
-      fetchAll(SB,'trials','trial_id,product,deployment_type,region,company_size,persona,acquisition_channel,campaign,landing_variant,activated,is_pql,sales_assisted,trial_extended,converted,signup_date,time_to_convert_days,non_conversion_reason,cac_usd,acv_usd'),
-      fetchAll(SB,'product_usage','trial_id,installed,db_connected,time_to_activate_hrs,feature_adoption_rate,engagement_score,logins,wait_time_analyses_run,tuning_advisors_used,anomaly_alerts_configured,reports_generated'),
+      fetchAll(SB,'trials','trial_id,product,deployment_type,region,company_size,persona,acquisition_channel,campaign,ad_group,landing_variant,installed,db_connected,activated,is_pql,sales_assisted,trial_extended,converted,signup_date,time_to_activate_hrs,time_to_convert_days,non_conversion_reason,cac_usd,acv_usd'),
+      fetchAll(SB,'product_usage','trial_id,logins,instances_monitored,wait_time_analyses_run,tuning_advisors_used,anomaly_alerts_configured,reports_generated,feature_adoption_rate,engagement_score'),
       fetchAll(SB,'channel_performance','month,channel,signups,conversions,spend_usd'),
       fetchAll(SB,'crm_opportunities','trial_id,product,region,stage,won,acv_usd')
     ]);
@@ -236,6 +252,12 @@ async function loadLive(){
     catch(e){ CAMPAIGN=null; console.warn('campaign_performance not found in Supabase — using snapshot for spend/ad-groups'); }
     TRIALS=trials; CHANNEL=channel; CRM=crm; PUMAP={};
     for(const p of pu) PUMAP[p.trial_id]=p;
+    // v2: installed / db_connected / time_to_activate_hrs live on trials — mirror into PUMAP
+    for(const r of trials){
+      const p = PUMAP[r.trial_id] || (PUMAP[r.trial_id]={trial_id:r.trial_id});
+      p.installed = !!r.installed; p.db_connected = !!r.db_connected;
+      if(p.time_to_activate_hrs==null) p.time_to_activate_hrs = r.time_to_activate_hrs;
+    }
     return true;
   }catch(e){ console.warn('Supabase unavailable:', e.message); return false; }
 }
@@ -257,12 +279,14 @@ async function loadSnapshot(){
         signup_date:dec('month',i)+'-01',activated:!!T.activated[i],is_pql:!!T.is_pql[i],converted:!!T.converted[i],
         sales_assisted:!!T.sales_assisted[i],trial_extended:!!T.trial_extended[i],
         cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null,
+        ad_group:T.ad_group?T.ad_group[i]:null,
         daymask:T.daymask?T.daymask[i]:null});
       PUMAP[id]={trial_id:id,installed:!!T.installed[i],db_connected:!!T.db_connected[i],
         time_to_activate_hrs:T.time_to_activate_hrs[i],feature_adoption_rate:T.feature_adoption_rate[i],
         engagement_score:T.engagement_score[i],logins:T.logins[i],wait_time_analyses_run:T.wait_time_analyses_run[i],
         tuning_advisors_used:T.tuning_advisors_used[i],anomaly_alerts_configured:T.anomaly_alerts_configured[i],
-        reports_generated:T.reports_generated[i]};
+        reports_generated:T.reports_generated[i],
+        instances_monitored:T.instances_monitored?T.instances_monitored[i]:null};
     }
     CHANNEL=S.channel.map(r=>({month:r[0],channel:r[1],signups:r[2],conversions:r[3],spend_usd:r[4]}));
     CAMPAIGN=S.campaign.map(r=>({month:r[0],channel:r[1],campaign:r[2],ad_group:r[3],impressions:r[4],clicks:r[5],spend_usd:r[6],signups:r[7],activated:r[8],conversions:r[9]}));
@@ -908,137 +932,283 @@ function renderPipe(view,f){
   <p class="note">Pipeline responds to the Product and Region filters; Deployment doesn't apply to CRM opportunities.</p>`;
 }
 
-// ---------------- Insights & recommendations ----------------
-function cInsights(f){
+// ---------------- Insights — four audiences ----------------
+let insAud='founder';   // founder | growth | campaign | sales
+const AUDS=[['founder','Founder','revenue &amp; efficiency'],['growth','Growth — you','what to test next'],
+            ['campaign','Campaign manager','kill or scale'],['sales','Sales','who to call']];
+
+function cIns(f){
   if(!HAVE()) return null;
   const F=filt(f), n=F.length||1;
   const won=F.filter(r=>r.converted);
-  const ACV = won.length ? mean(won.map(r=>+r.acv_usd||0)) : 9729;
-  const money = x => x>=1e6 ? '$'+(x/1e6).toFixed(1)+'M' : '$'+Math.round(x/1e3)+'K';
+  const money=x=>{x=+x||0; const a=Math.abs(x); const s=x<0?'-':'';
+    return a>=1e6? s+'$'+(a/1e6).toFixed(1)+'M' : a>=1e3? s+'$'+Math.round(a/1e3)+'K' : s+'$'+Math.round(a);};
+  const spend=F.reduce((a,r)=>a+(+r.cac_usd||0),0);
+  const acv=won.reduce((a,r)=>a+(+r.acv_usd||0),0);
+  const avgACV=won.length?acv/won.length:0;
+  const cpc=won.length?spend/won.length:0;
 
-  const base=TRIALS.filter(r=>(f.product==='all'||r.product===f.product)&&(f.region==='all'||r.region===f.region));
-  const sh=base.filter(r=>r.deployment_type==='self_hosted'), sa=base.filter(r=>r.deployment_type==='saas');
-  const shAct=mean(sh.map(r=>r.activated?1:0)), saAct=mean(sa.map(r=>r.activated?1:0));
-  const shActive=sh.filter(r=>r.activated);
-  const convIfAct = shActive.length ? mean(shActive.map(r=>r.converted?1:0)) : 0;
-  const gap = saAct-shAct;
-  // only valid if the slice actually contains both deployment types to compare
-  const cmpOK = sh.length>=30 && sa.length>=30 && gap>0;
-  const addAct = cmpOK ? sh.length*gap*0.5 : 0;
-  const addCust1 = addAct*convIfAct;
+  // deployment
+  const dep=dt=>{ const d=F.filter(r=>r.deployment_type===dt); const m=d.length||1;
+    return {n:d.length, inst:pct(d.filter(r=>PUMAP[r.trial_id]?.installed).length,m),
+      conn:pct(d.filter(r=>PUMAP[r.trial_id]?.db_connected).length,m),
+      act:pct(d.filter(r=>r.activated).length,m), conv:pct(d.filter(r=>r.converted).length,m)}; };
+  const SH=dep('self_hosted'), SA=dep('saas');
+  const gapOK = SH.n>=50 && SA.n>=50 && SA.act>SH.act;
 
-  // engagement
-  const es = r=>+PUMAP[r.trial_id]?.engagement_score;
-  const low=F.filter(r=>es(r)<=20), mid=F.filter(r=>es(r)>20&&es(r)<=40);
-  const lowC=low.length?mean(low.map(r=>r.converted?1:0)):0, midC=mid.length?mean(mid.map(r=>r.converted?1:0)):0;
-  const addCust2 = Math.max(low.length*0.10*(midC-lowC),0);
+  // instances_monitored — the aha moment
+  const inst=k=>{ const d=F.filter(r=>(+PUMAP[r.trial_id]?.instances_monitored||0)===k);
+    return {n:d.length, conv:pct(d.filter(r=>r.converted).length,d.length||1)}; };
+  const i1=inst(1), i2=inst(2);
+  const instCurve=[0,1,2,3,4,5].map(k=>({k, ...inst(k)}));
+  const i3plus=F.filter(r=>(+PUMAP[r.trial_id]?.instances_monitored||0)>=3);
+  const stuck1=i1.n;
 
-  // landing page
-  const A=F.filter(r=>r.landing_variant==='A'), B=F.filter(r=>r.landing_variant==='B');
-  const aC=A.length?mean(A.map(r=>r.converted?1:0)):0, bC=B.length?mean(B.map(r=>r.converted?1:0)):0;
-  const addCust3 = Math.max(A.length*(bC-aC),0);
-  const lift = aC ? (bC-aC)/aC*100 : 0;
+  // persona
+  const PO=['DBA','IT_ops','developer'];
+  const pers=PO.map(p=>{ const d=F.filter(r=>r.persona===p); const m=d.length||1;
+    return {p, n:d.length, conn:pct(d.filter(r=>PUMAP[r.trial_id]?.db_connected).length,m),
+      act:pct(d.filter(r=>r.activated).length,m)}; }).filter(x=>x.n>0);
 
-  // sales assist among PQLs — selection effect check
+  // ad groups — real now
+  const ag={};
+  F.forEach(r=>{ const k=(r.acquisition_channel||'?')+'||'+(r.ad_group||'?');
+    const o=ag[k]=ag[k]||{ch:r.acquisition_channel,g:r.ad_group,n:0,spend:0,cust:0,acv:0};
+    o.n++; o.spend+=(+r.cac_usd||0); if(r.converted){o.cust++; o.acv+=(+r.acv_usd||0);} });
+  const groups=Object.values(ag).filter(o=>o.n>=20).map(o=>({...o,
+    roas: o.spend? o.acv/o.spend : 0, cpc: o.cust? o.spend/o.cust : Infinity }));
+  const losers=groups.filter(o=>o.roas<1).sort((a,b)=>a.roas-b.roas);
+  const winners=[...groups].sort((a,b)=>b.roas-a.roas).slice(0,5);
+  const waste=losers.reduce((a,o)=>a+o.spend,0);
+  const wasteRecovered=losers.reduce((a,o)=>a+(o.spend-o.acv),0);
+
+  // channels
+  const chm={};
+  F.forEach(r=>{ const c=r.acquisition_channel||'?'; const o=chm[c]=chm[c]||{n:0,spend:0,cust:0,acv:0};
+    o.n++; o.spend+=(+r.cac_usd||0); if(r.converted){o.cust++; o.acv+=(+r.acv_usd||0);} });
+  const chans=Object.entries(chm).map(([c,o])=>({c,...o,roas:o.spend?o.acv/o.spend:0,
+    contrib:o.acv-o.spend})).sort((a,b)=>b.contrib-a.contrib);
+
+  // sales: PQLs, touched vs not
   const pql=F.filter(r=>r.is_pql);
   const pqlS=pql.filter(r=>r.sales_assisted), pqlN=pql.filter(r=>!r.sales_assisted);
-  const pqlSc=pqlS.length?mean(pqlS.map(r=>r.converted?1:0))*100:0;
-  const pqlNc=pqlN.length?mean(pqlN.map(r=>r.converted?1:0))*100:0;
-  const naiveS=mean(F.filter(r=>r.sales_assisted).map(r=>r.converted?1:0))*100;
-  const naiveN=mean(F.filter(r=>!r.sales_assisted).map(r=>r.converted?1:0))*100;
+  const pqlSc=pct(pqlS.filter(r=>r.converted).length, pqlS.length||1);
+  const pqlNc=pct(pqlN.filter(r=>r.converted).length, pqlN.length||1);
+  const naiveS=pct(F.filter(r=>r.sales_assisted&&r.converted).length, F.filter(r=>r.sales_assisted).length||1);
+  const naiveN=pct(F.filter(r=>!r.sales_assisted&&r.converted).length, F.filter(r=>!r.sales_assisted).length||1);
 
-  // acquisition waste — worst cost per customer
-  const acq=cAcq(f);
-  let worst=null, best=null;
-  if(acq && acq.channels.length){
-    const withConv=acq.channels.filter(c=>c.conv>=5);
-    if(withConv.length){
-      const s=[...withConv].sort((x,y)=>x.cpa-y.cpa);
-      best=s[0]; worst=s[s.length-1];
-    }
-  }
-  const waste = worst && best ? worst.spend*(1-best.cpa/worst.cpa) : 0;
+  // pipeline
+  const ids=new Set(F.map(r=>r.trial_id));
+  const O=(CRM||[]).filter(o=>!o.trial_id || ids.has(o.trial_id));
+  const wonO=O.filter(o=>o.won);
+  const openStages=new Set(['Discovery','Technical Evaluation','Proposal','Negotiation']);
+  const openO=O.filter(o=>openStages.has(o.stage));
 
-  const reasons={};
-  F.filter(r=>!r.converted&&r.non_conversion_reason).forEach(r=>reasons[r.non_conversion_reason]=(reasons[r.non_conversion_reason]||0)+1);
-  const setupReasons=(reasons['setup_too_complex']||0)+(reasons['couldnt_connect_db']||0);
+  // landing page
+  const lv=v=>{ const d=F.filter(r=>r.landing_variant===v); const m=d.length||1;
+    return {n:d.length, act:pct(d.filter(r=>r.activated).length,m), conv:pct(d.filter(r=>r.converted).length,m)}; };
+  const A=lv('A'), B=lv('B');
+  const lift=A.conv? (B.conv-A.conv)/A.conv*100 : 0;
 
-  return {n,ACV,money,
-    conv:mean(F.map(r=>r.converted?1:0))*100, act:mean(F.map(r=>r.activated?1:0))*100,
-    shAct:shAct*100, saAct:saAct*100, gap:gap*100, convIfAct:convIfAct*100, cmpOK,
-    addCust1, addAct, setupReasons,
-    lowN:low.length, lowC:lowC*100, midC:midC*100, addCust2,
-    aC:aC*100, bC:bC*100, lift, addCust3, aN:A.length,
-    pqlSc, pqlNc, naiveS, naiveN, pqlN:pqlN.length,
-    worst, best, waste};
+  // sizing
+  const convIfAct = SH.n? pct(F.filter(r=>r.deployment_type==='self_hosted'&&r.converted).length,
+                              F.filter(r=>r.deployment_type==='self_hosted'&&r.activated).length||1)/100 : 0;
+  const addAct = gapOK ? SH.n*((SA.act-SH.act)/100)*0.5 : 0;
+  const setupPrize = addAct*convIfAct*avgACV;
+  const instPrize = Math.max(stuck1*0.25*((i2.conv-i1.conv)/100)*avgACV, 0);
+  const abPrize = Math.max(A.n*((B.conv-A.conv)/100)*avgACV, 0);
+
+  return {n:F.length, money, spend, acv, avgACV, cpc, won:won.length,
+    convRate:pct(won.length,n), actRate:pct(F.filter(r=>r.activated).length,n),
+    ltvcac: cpc? avgACV/cpc : 0, contrib: acv-spend,
+    SH, SA, gapOK, instCurve, i1, i2, stuck1, i3plus:i3plus.length, pers,
+    groups, losers, winners, waste, wasteRecovered, chans,
+    pql:pql.length, pqlS:pqlS.length, pqlN:pqlN.length, pqlSc, pqlNc, naiveS, naiveN,
+    opps:O.length, openO:openO.length, wonO:wonO.length,
+    winRate:pct(wonO.length,O.length||1), avgWonACV: wonO.length? wonO.reduce((a,o)=>a+(+o.acv_usd||0),0)/wonO.length : 0,
+    A, B, lift, setupPrize, instPrize, abPrize};
+}
+
+const CHL=c=>CH_LABELS[c]||c;
+const PLB={DBA:'DBA',IT_ops:'IT ops',developer:'Developer'};
+
+function kpi(label,val,sub,color){
+  return `<div class="kpi"><p class="l">${label}</p><p class="v ${String(val).length>7?'sm':''}" ${color?`style="color:${color}"`:''}>${val}</p><p class="s">${sub}</p></div>`;
+}
+function bars(rows,fmt,colorFn){
+  const mx=Math.max(...rows.map(r=>Math.abs(r.v)),1);
+  return rows.map(r=>`<div class="frow"><span class="fname" style="width:132px">${r.l}</span>
+    <div class="ftrack"><div class="ffill" style="width:${Math.max(Math.abs(r.v)/mx*100,2)}%;background:${colorFn?colorFn(r):'var(--sw)'}"></div></div>
+    <span class="fnum" style="width:66px">${fmt(r.v)}</span></div>`).join('');
 }
 
 function renderInsights(view,f){
-  const a=cInsights(f);
-  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Insights</p><p>Loading data…</p></div>'; return; }
+  const a=cIns(f);
+  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Insights</p><p>Loading…</p></div>'; return; }
   const M=a.money, num=x=>Math.round(x).toLocaleString();
-  const CH=c=>CH_LABELS[c]||c;
 
-  const cards=[];
+  const tabs=`<div class="audbar">${AUDS.map(([id,t,s])=>
+    `<button class="aud${insAud===id?' on':''}" data-aud="${id}">
+       <span class="at">${t}</span><span class="as">${s}</span></button>`).join('')}</div>`;
 
-  if(a.cmpOK) cards.push({r:1,t:'Setup friction is the single biggest leak',tags:[['High impact','hi'],['Product + Lifecycle','']],
-    ev:`Self-hosted trials activate at <b>${a.shAct.toFixed(1)}%</b> vs <b>${a.saAct.toFixed(1)}%</b> for SaaS — a <b>${a.gap.toFixed(0)}-point gap</b> that opens at install and DB-connect, not at pricing. Crucially, self-hosted trials that <i>do</i> activate convert at <b>${a.convIfAct.toFixed(1)}%</b>. The demand is real; the onboarding is what's failing. <b>${num(a.setupReasons)}</b> non-converters cite setup complexity or a failed DB connection.`,
-    acts:['Ship a guided setup wizard with a connection health-check and pre-flight requirements check.',
-          'Trigger a self-hosted-only "stuck at install" email + in-app nudge at the 24h no-connect mark.',
-          'Offer a one-click hosted sandbox so evaluation can start before infrastructure is ready.',
-          'Instrument install → connect → first-analysis as a tracked funnel with alerting on drop.'],
-    imp:[[M(a.addCust1*a.ACV),'ACV opportunity'],['+'+num(a.addCust1),'new customers'],['+'+num(a.addAct),'activations'],['Closing half the gap','assumption']]});
+  let body='';
 
-  cards.push({r:cards.length+1,t:'Engagement predicts revenue — so engineer engagement',tags:[['High impact','hi'],['Lifecycle','']],
-    ev:`Conversion climbs from <b>${a.lowC.toFixed(1)}%</b> at the bottom of the engagement curve to <b>${a.midC.toFixed(1)}%</b> in the next band and beyond 40% at the top. <b>${num(a.lowN)}</b> trials are parked in the lowest band — that is the pool to move. Wait-time analysis is the most-used feature among activated trials and is the clearest "aha" to drive people toward.`,
-    acts:['Define activation as "first wait-time analysis run", not "logged in", and drive the whole onboarding to it.',
-          'Build an engagement score threshold that triggers lifecycle intervention before the trial goes cold.',
-          'Sequence feature nurture toward the aha: wait-time analysis first, tuning advisors second.'],
-    imp:[[M(a.addCust2*a.ACV),'ACV opportunity'],['+'+num(a.addCust2),'new customers'],['10% of low band','assumption']]});
-
-  if(a.addCust3>0) cards.push({r:cards.length+1,t:'Roll out the benefit-led landing page',tags:[['Quick win','lo'],['Growth marketing','']],
-    ev:`Variant B (benefit-led) converts at <b>${a.bC.toFixed(1)}%</b> vs <b>${a.aC.toFixed(1)}%</b> for the feature-led control — a <b>+${a.lift.toFixed(0)}%</b> relative lift. The win isn't only at the bottom: B also improves activation and PQL rate, so the gain compounds up-funnel rather than just shifting who signs up.`,
-    acts:['Ship B to 100% of traffic and retire A.',
-          'Confirm significance and check the lift holds by segment before declaring it a win.',
-          'Apply the benefit-led framing to paid search ad copy and the trial signup flow.'],
-    imp:[[M(a.addCust3*a.ACV),'ACV opportunity'],['+'+num(a.addCust3),'new customers'],['Low','effort']]});
-
-  if(a.worst && a.best && a.worst.channel!==a.best.channel) cards.push({r:cards.length+1,t:'Reallocate paid spend on cost per customer, not cost per signup',tags:[['Medium impact','md'],['Growth marketing','']],
-    ev:`<b>${CH(a.best.channel)}</b> buys a paying customer for <b>$${num(a.best.cpa)}</b>. <b>${CH(a.worst.channel)}</b> pays <b>$${num(a.worst.cpa)}</b> for the same outcome while spending <b>${M(a.worst.spend)}</b>. Cheap signups are not cheap customers — the gap only shows up once you follow the trial through to paid. Drill into the ad-group level and the spread widens again inside a single campaign.`,
-    acts:['Re-target paid budgets against cost per paid customer as the primary bidding metric.',
-          'Cut the bottom-quartile ad groups and reinvest into the ones that convert.',
-          'Pipe activation and conversion events back into the ad platforms so bidding optimises on revenue, not signups.'],
-    imp:[[M(a.waste),'reallocatable spend'],['$'+num(a.worst.cpa)+' → $'+num(a.best.cpa),'cost per customer'],['Medium','effort']]});
-
-  cards.push({r:cards.length+1,t:'Careful: sales-assist is a selection effect, not a lever',tags:[['Caveat','']],warn:true,
-    ev:`Headline numbers say sales-assisted trials convert at <b>${a.naiveS.toFixed(1)}%</b> vs <b>${a.naiveN.toFixed(1)}%</b> self-serve — a tempting case for more reps. But hold intent constant and it collapses: <b>among PQLs</b>, sales-assisted converts at <b>${a.pqlSc.toFixed(1)}%</b> vs <b>${a.pqlNc.toFixed(1)}%</b> without a rep. Reps are being routed to trials that were already going to buy. The gap measures routing, not persuasion.`,
-    acts:['Don\'t scale headcount on this number — the causal read is unproven.',
-          'Run a proper holdout: randomly withhold sales touch from a slice of PQLs and measure the true incremental lift.',
-          'Until then, spend the coverage on the ' + num(a.pqlN) + ' PQLs with no touch at all, and measure.'],
-    imp:[[a.pqlSc.toFixed(1)+'% vs '+a.pqlNc.toFixed(1)+'%','PQL conv, assisted vs not'],['~0','proven incremental lift'],['Test first','recommendation']]});
-
-  const total = (a.addCust1 + a.addCust2 + a.addCust3) * a.ACV;
-  const recap = a.cmpOK
-    ? `The conversion problem is not a <i>selling</i> problem — it is an <i>onboarding</i> problem. Trials that reach first value convert at healthy rates; the majority never get there, and the drop happens at install and database connection, concentrated in self-hosted deployments. Fixing setup, then engineering engagement, is worth roughly <b>${M(total)}</b> in annual contract value before a single extra dollar of ad spend.`
-    : `This slice contains only one deployment type, so the self-hosted vs SaaS setup comparison is switched off here — clear the Deployment filter to see it. Within this slice the levers that still apply are engagement and the landing-page rollout, worth roughly <b>${M(total)}</b> in annual contract value.`;
-
-  view.innerHTML = `
-  <div class="recap">
-    <h3>What the data says</h3>
-    <p>Across <b>${num(a.n)}</b> trials in this slice, <b>${a.act.toFixed(1)}%</b> activate and <b>${a.conv.toFixed(1)}%</b> convert to paid. ${recap}</p>
-  </div>
-  ${cards.map(c=>`
-  <div class="ins">
-    <div class="top">
-      <div class="rank${c.warn?' warn':''}">${c.warn?'!':c.r}</div>
-      <h4>${c.t}</h4>
-      <div class="tags">${c.tags.map(t=>`<span class="tag ${t[1]}">${t[0]}</span>`).join('')}</div>
+  // ---------- FOUNDER ----------
+  if(insAud==='founder'){
+    body=`
+    <div class="grid-kpi">
+      ${kpi('Won ACV', M(a.acv), `${num(a.won)} customers`, 'var(--green)')}
+      ${kpi('Marketing spend', M(a.spend), 'total CAC', null)}
+      ${kpi('Contribution', M(a.contrib), 'ACV minus spend', 'var(--sw)')}
+      ${kpi('LTV / CAC', a.ltvcac.toFixed(1)+'x', 'healthy is 3x+', a.ltvcac>=3?'var(--green)':'var(--red)')}
+      ${kpi('Trial → paid', a.convRate.toFixed(1)+'%', `of ${num(a.n)} trials`, null)}
     </div>
-    <p class="ev">${c.ev}</p>
-    <ul class="acts">${c.acts.map(x=>`<li>${x}</li>`).join('')}</ul>
-    <div class="impact">${c.imp.map(i=>`<div><p class="n">${i[0]}</p><p class="c">${i[1]}</p></div>`).join('')}</div>
-  </div>`).join('')}
-  <p class="note">Impact figures are directional sizings, computed live from the filtered dataset at an average won ACV of $${num(a.ACV)}. They size the prize to prioritise work — they are not forecasts, and each assumes the stated capture rate.</p>`;
+    <div class="recap">
+      <h3>The one-paragraph version</h3>
+      <p>We spend <b>${M(a.spend)}</b> to acquire <b>${num(a.won)}</b> customers worth <b>${M(a.acv)}</b> — a <b>${a.ltvcac.toFixed(1)}x</b> return. The unit economics work.
+      ${a.gapOK?`The growth constraint is not demand, it is <b>onboarding</b>: ${a.actRate.toFixed(0)}% of trials ever reach first value, and self-hosted trials activate at <b>${a.SH.act.toFixed(0)}%</b> against <b>${a.SA.act.toFixed(0)}%</b> for SaaS — the same gap in every product. Closing half of it is worth roughly <b>${M(a.setupPrize)}</b> a year, before a dollar of new ad spend.`:''}</p>
+    </div>
+    <div class="row2">
+      <div class="panel"><div class="head"><h3>Where the money is made</h3><span>contribution = won ACV − spend</span></div>
+        ${bars(a.chans.slice(0,9).map(c=>({l:CHL(c.c), v:c.contrib, roas:c.roas})), M, r=>r.roas>=3?'#12A374':r.roas>=1?'#FF6200':'#D64542')}
+        <p class="note">Green = 3x+ return. Red = losing money.</p></div>
+      <div class="panel"><div class="head"><h3>Efficiency, per customer</h3><span>the two numbers that matter</span></div>
+        <div class="bigpair">
+          <div><p class="bl">It costs us</p><p class="bv" style="color:var(--red)">${M(a.cpc)}</p><p class="bs">to win one customer</p></div>
+          <div class="bx">vs</div>
+          <div><p class="bl">They are worth</p><p class="bv" style="color:var(--green)">${M(a.avgACV)}</p><p class="bs">per year</p></div>
+        </div>
+        ${a.waste>0?`<div class="warnbox"><b>${M(a.waste)}</b> of that spend sits in ad groups returning <b>less than 1x</b>. Roughly <b>${M(a.wasteRecovered)}</b> is recoverable by reallocation alone.</div>`:''}
+      </div>
+    </div>`;
+  }
+
+  // ---------- GROWTH ----------
+  if(insAud==='growth'){
+    const ic=a.instCurve;
+    const icMax=Math.max(...ic.map(x=>x.conv),1);
+    const icBars=ic.map(x=>`<div class="frow"><span class="fname" style="width:112px">${x.k} database${x.k===1?'':'s'}</span>
+      <div class="ftrack"><div class="ffill" style="width:${Math.max(x.conv/icMax*100,1.5)}%;background:${x.k>=2?'#12A374':'#D64542'}"></div></div>
+      <span class="fnum" style="width:52px">${x.conv.toFixed(1)}%</span><span class="fstep">${num(x.n)}</span></div>`).join('');
+    const persBars=a.pers.map(p=>`<div class="frow"><span class="fname" style="width:92px">${PLB[p.p]||p.p}</span>
+      <div class="ftrack"><div class="ffill" style="width:${Math.max(p.conn,2)}%"></div></div>
+      <span class="fnum">${p.conn.toFixed(0)}%</span></div>`).join('');
+    const exps=[
+      {r:1,t:'Drive trials to a <i>second</i> database',
+       ev:`Trials monitoring <b>one</b> database convert at <b>${a.i1.conv.toFixed(1)}%</b>. At <b>two</b>, it jumps to <b>${a.i2.conv.toFixed(1)}%</b> — a <b>${a.i1.conv? (a.i2.conv/a.i1.conv).toFixed(1):'—'}x</b> step change. <b>${num(a.stuck1)}</b> trials are parked at one and never move.`,
+       act:'Pendo guide on the instance screen: "Add a second database to compare." No engineering needed.',
+       imp:[[M(a.instPrize),'if 25% move'],[num(a.stuck1),'trials stuck at 1']]},
+      {r:2,t:'Kill the setup wall for self-hosted',
+       ev:a.gapOK?`Self-hosted activates at <b>${a.SH.act.toFixed(0)}%</b> vs <b>${a.SA.act.toFixed(0)}%</b> SaaS — <b>and the gap is identical in every product</b>, so it is the deployment, not the software. The drop opens at install (${a.SH.inst.toFixed(0)}% vs ${a.SA.inst.toFixed(0)}%) and DB-connect (${a.SH.conn.toFixed(0)}% vs ${a.SA.conn.toFixed(0)}%).`:'Not enough of both deployment types in this slice to compare.',
+       act:'Pre-flight compatibility check before download · setup-help nurture at 24h no-connect · hosted sandbox so evaluation starts on day one.',
+       imp:[[M(a.setupPrize),'closing half the gap']]},
+      {r:3,t:'Prompt developers to invite their DBA',
+       ev:`DBAs connect a database <b>${a.pers.length?(a.pers[0].conn - a.pers[a.pers.length-1].conn).toFixed(0):'—'} points</b> more often than developers. The DB-connect step needs permissions a developer usually does not have. This is an <b>access</b> problem, not a motivation problem.`,
+       act:'If persona = developer, show an "invite your DBA" step at signup.',
+       imp:[[a.pers.length?a.pers[0].conn.toFixed(0)+'% vs '+a.pers[a.pers.length-1].conn.toFixed(0)+'%':'—','DBA vs dev, DB-connect']]},
+      {r:4,t:'Roll landing variant B to 100%',
+       ev:`B converts at <b>${a.B.conv.toFixed(2)}%</b> vs <b>${a.A.conv.toFixed(2)}%</b> for A (<b>${a.lift>=0?'+':''}${a.lift.toFixed(0)}%</b> relative), and lifts activation too — so the gain compounds up-funnel.`,
+       act:'Ship B, retire A, confirm significance by segment first.',
+       imp:[[M(a.abPrize),'if rolled out'],['Low','effort']]}
+    ];
+    body=`
+    <div class="grid-kpi">
+      ${kpi('Activation', a.actRate.toFixed(1)+'%', 'reached first value', 'var(--sw)')}
+      ${kpi('Trial → paid', a.convRate.toFixed(1)+'%', `${num(a.won)} customers`, null)}
+      ${kpi('The aha moment', a.i2.conv.toFixed(1)+'%', 'convert at 2+ databases', 'var(--green)')}
+      ${kpi('Stuck at 1 database', num(a.stuck1), `converting at just ${a.i1.conv.toFixed(1)}%`, 'var(--red)')}
+    </div>
+    <div class="row2">
+      <div class="panel"><div class="head"><h3>The aha moment: a second database</h3><span>conversion by databases monitored</span></div>
+        ${icBars}
+        <p class="note">The cliff is between one and two. Getting a trial to add a second database is the single highest-leverage act in the funnel.</p></div>
+      <div class="panel"><div class="head"><h3>Who can actually connect a database</h3><span>% reaching DB-connect</span></div>
+        ${persBars}
+        <p class="note">The step needs a monitoring user and a firewall port. DBAs have those rights. Developers have to go and ask.</p></div>
+    </div>
+    ${exps.map(x=>`<div class="ins"><div class="top"><div class="rank">${x.r}</div><h4>${x.t}</h4></div>
+      <p class="ev">${x.ev}</p>
+      <ul class="acts"><li>${x.act}</li></ul>
+      <div class="impact">${x.imp.map(i=>`<div><p class="n">${i[0]}</p><p class="c">${i[1]}</p></div>`).join('')}</div></div>`).join('')}`;
+  }
+
+  // ---------- CAMPAIGN MANAGER ----------
+  if(insAud==='campaign'){
+    const row=o=>`<tr><td><b>${o.g}</b><br><span class="sub2">${CHL(o.ch)}</span></td>
+      <td class="num">${num(o.n)}</td><td class="num">${M(o.spend)}</td><td class="num">${o.cust}</td>
+      <td class="num">${o.cust?M(o.cpc):'—'}</td>
+      <td class="num"><b style="color:${o.roas>=3?'#12A374':o.roas>=1?'var(--text)':'#D64542'}">${o.roas.toFixed(1)}x</b></td></tr>`;
+    body=`
+    <div class="grid-kpi">
+      ${kpi('Spend', M(a.spend), 'across all ad groups', null)}
+      ${kpi('Wasted spend', M(a.waste), 'in ad groups below 1x', 'var(--red)')}
+      ${kpi('Recoverable', M(a.wasteRecovered), 'by cutting the losers', 'var(--sw)')}
+      ${kpi('Blended ROAS', a.spend? (a.acv/a.spend).toFixed(1)+'x':'—', 'won ACV ÷ spend', 'var(--green)')}
+    </div>
+    ${a.losers.length?`<div class="panel" style="margin-top:12px;border-color:rgba(214,69,66,.4)">
+      <div class="head"><h3 style="color:var(--red)">Cut these — returning less than they cost</h3><span>min 20 signups</span></div>
+      <table class="dtable"><thead><tr><th>Ad group</th><th class="num">Signups</th><th class="num">Spend</th><th class="num">Customers</th><th class="num">$/customer</th><th class="num">ROAS</th></tr></thead>
+      <tbody>${a.losers.slice(0,8).map(row).join('')}</tbody></table>
+      <div class="warnbox" style="margin-top:12px">Every dollar here returns less than a dollar. Moving <b>${M(a.waste)}</b> into the ad groups below would be the single fastest efficiency win available.</div>
+    </div>`:''}
+    <div class="panel" style="margin-top:12px;border-color:rgba(18,163,116,.4)">
+      <div class="head"><h3 style="color:var(--green)">Scale these — the money-makers</h3><span>by return on ad spend</span></div>
+      <table class="dtable"><thead><tr><th>Ad group</th><th class="num">Signups</th><th class="num">Spend</th><th class="num">Customers</th><th class="num">$/customer</th><th class="num">ROAS</th></tr></thead>
+      <tbody>${a.winners.map(row).join('')}</tbody></table>
+    </div>
+    <div class="insight">${bulb}
+      <p><b>Judge on cost per customer, not cost per signup.</b> The ad groups burning money often look fine on signup volume — they simply bring trials that never install, never activate, and never buy. Google optimises for cheap signups because that is all it can see. Feed conversions back into the ad platforms so bidding chases revenue instead.</p></div>`;
+  }
+
+  // ---------- SALES ----------
+  if(insAud==='sales'){
+    const untouchedBetter = a.pqlNc > a.pqlSc;
+    body=`
+    <div class="grid-kpi">
+      ${kpi('PQLs', num(a.pql), 'product-qualified, in this slice', 'var(--sw)')}
+      ${kpi('PQLs with no rep', num(a.pqlN), 'nobody has called them', 'var(--red)')}
+      ${kpi('Open opportunities', num(a.openO), 'live in pipeline', null)}
+      ${kpi('Avg ACV won', M(a.avgWonACV), `${num(a.wonO)} closed won`, 'var(--green)')}
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="head"><h3>Does sales touch actually help?</h3><span>the honest answer</span></div>
+      <div class="cmp">
+        <div><div class="lab"><span>All trials — sales-assisted</span><span>looks great</span></div>
+          <div class="cbar"><div class="fill" style="width:${Math.min(a.naiveS/Math.max(a.naiveS,a.naiveN,1)*100,100)}%;background:#12A374">${a.naiveS.toFixed(1)}%</div></div></div>
+        <div><div class="lab"><span>All trials — self-serve</span><span></span></div>
+          <div class="cbar"><div class="fill" style="width:${Math.min(a.naiveN/Math.max(a.naiveS,a.naiveN,1)*100,100)}%;background:#8B95A6">${a.naiveN.toFixed(1)}%</div></div></div>
+      </div>
+      <p class="note" style="margin:14px 0 10px"><b>Now hold intent constant — look only at PQLs:</b></p>
+      <div class="cmp">
+        <div><div class="lab"><span>PQLs — sales-assisted</span><span>${num(a.pqlS)} trials</span></div>
+          <div class="cbar"><div class="fill" style="width:${Math.min(a.pqlSc/Math.max(a.pqlSc,a.pqlNc,1)*100,100)}%;background:${untouchedBetter?'#D64542':'#12A374'}">${a.pqlSc.toFixed(1)}%</div></div></div>
+        <div><div class="lab"><span>PQLs — no rep touched them</span><span>${num(a.pqlN)} trials</span></div>
+          <div class="cbar"><div class="fill" style="width:${Math.min(a.pqlNc/Math.max(a.pqlSc,a.pqlNc,1)*100,100)}%;background:#12A374">${a.pqlNc.toFixed(1)}%</div></div></div>
+      </div>
+      <div class="warnbox" style="margin-top:14px">
+        ${untouchedBetter
+          ? `<b>Sales touch shows no lift.</b> Among PQLs — people whose behaviour already says they want to buy — untouched trials convert at <b>${a.pqlNc.toFixed(1)}%</b> and sales-assisted at <b>${a.pqlSc.toFixed(1)}%</b>. The headline gap (${a.naiveS.toFixed(1)}% vs ${a.naiveN.toFixed(1)}%) is a <b>selection effect</b>: reps get routed to trials that were already going to convert. Do not scale headcount on that number — run a holdout first.`
+          : `Among PQLs, sales-assisted converts at <b>${a.pqlSc.toFixed(1)}%</b> vs <b>${a.pqlNc.toFixed(1)}%</b> untouched. Confirm with a randomised holdout before scaling headcount.`}
+      </div>
+    </div>
+    <div class="ins"><div class="top"><div class="rank">1</div><h4>What sales should actually do on Monday</h4></div>
+      <ul class="acts">
+        <li>Prioritise PQLs by <b>databases monitored</b>, not by company size — trials at 2+ databases convert at ${a.i2.conv.toFixed(1)}% vs ${a.i1.conv.toFixed(1)}% at one.</li>
+        <li>Define the PQL → opportunity handoff so high-intent trials reach a rep <b>while the evaluation is still warm</b>, not after the trial expires.</li>
+        <li>Run a randomised holdout on PQL coverage — withhold sales touch from a slice and measure the true incremental lift. Right now we are paying for reps on evidence that does not hold up.</li>
+      </ul>
+      <div class="impact">
+        <div><p class="n">${num(a.pqlN)}</p><p class="c">PQLs with no rep</p></div>
+        <div><p class="n">${a.winRate.toFixed(1)}%</p><p class="c">opportunity win rate</p></div>
+        <div><p class="n">${M(a.avgWonACV)}</p><p class="c">avg won deal</p></div>
+      </div>
+    </div>`;
+  }
+
+  view.innerHTML = tabs + body +
+    `<p class="note">Every figure recomputes from the filters above — product, region, deployment and the signup date range. Impact sizings are directional, at an average won ACV of ${M(a.avgACV)}.</p>`;
+
+  view.querySelectorAll('.aud').forEach(b=> b.onclick=()=>{ insAud=b.dataset.aud; render(); });
 }
 
 // ---------------- router ----------------
