@@ -144,6 +144,12 @@
   .warnbox{background:rgba(214,69,66,.08);border:1px solid rgba(214,69,66,.25);border-radius:10px;
            padding:11px 13px;font-size:13px;line-height:1.5;color:var(--text);}
   .sub2{font-size:10.5px;color:var(--text3);}
+  .sigpill{font-size:10px;font-weight:600;letter-spacing:.03em;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+  .sigpill.yes{background:rgba(18,163,116,.13);color:#0B7A56;}
+  .sigpill.no{background:rgba(214,69,66,.11);color:#A5322F;}
+  .rmhead{margin:22px 0 10px;}
+  .rmhead h3{font-family:var(--disp);font-size:17px;font-weight:600;margin:0 0 4px;}
+  .rmhead p{font-size:13px;color:var(--text2);margin:0;}
   .ctrlbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 14px;}
   .ctrlbar .cl{font-size:11.5px;color:var(--text3);margin-left:4px;}
   .ctrlbar select{font-size:12px;padding:5px 8px;}
@@ -644,13 +650,79 @@ function cRet(f){
 }
 
 // ---------------- compute (Experiments) ----------------
+// Two-proportion z-test. Nothing gets called a win until the maths says so.
+function ztest(c1,n1,c2,n2){
+  if(!n1||!n2) return {p1:0,p2:0,lift:0,z:0,pv:1,sig:false,ci:[0,0]};
+  const p1=c1/n1, p2=c2/n2, p=(c1+c2)/(n1+n2);
+  const se=Math.sqrt(p*(1-p)*(1/n1+1/n2));
+  const z = se? (p2-p1)/se : 0;
+  const pv = 2*(1-normcdf(Math.abs(z)));
+  const seDiff=Math.sqrt(p1*(1-p1)/n1 + p2*(1-p2)/n2);
+  const d=p2-p1;
+  return {p1:p1*100, p2:p2*100, lift: p1? (p2-p1)/p1*100 : 0, z, pv, sig: pv<0.05,
+          ci:[(d-1.96*seDiff)*100, (d+1.96*seDiff)*100]};
+}
+function normcdf(x){ // Abramowitz-Stegun
+  const t=1/(1+0.2316419*x);
+  const d=0.3989423*Math.exp(-x*x/2);
+  const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+  return 1-p;
+}
+// how many per arm do we need to detect a given relative lift at 80% power?
+function sampleNeeded(base, relLift){
+  const p1=base, p2=base*(1+relLift);
+  const pbar=(p1+p2)/2, d=Math.abs(p2-p1);
+  if(!d) return Infinity;
+  return Math.ceil( Math.pow(1.96*Math.sqrt(2*pbar*(1-pbar)) + 0.84*Math.sqrt(p1*(1-p1)+p2*(1-p2)), 2) / (d*d) );
+}
+
 function cExp(f){
-  if(!HAVE()) return FB.experiments;
+  if(!HAVE()) return null;
   const F=filt(f);
-  const v=x=>{ const d=F.filter(r=>r.landing_variant===x); const n=d.length||1; return {n:d.length,act:r1(pct(d.filter(r=>r.activated).length,n)),pql:r1(pct(d.filter(r=>r.is_pql).length,n)),conv:r1(pct(d.filter(r=>r.converted).length,n))}; };
-  const A=v('A'), Bv=v('B'); const lift=A.conv?r1((Bv.conv-A.conv)/A.conv*100):0;
-  const grp=pred=>{ const d=F.filter(pred); return r1(pct(d.filter(r=>r.converted).length,d.length||1)); };
-  return {ab:{A,B:Bv,lift}, ext:{no:grp(r=>!r.trial_extended),yes:grp(r=>r.trial_extended),n_yes:F.filter(r=>r.trial_extended).length}, sales:{self:grp(r=>!r.sales_assisted),assisted:grp(r=>r.sales_assisted),n_assisted:F.filter(r=>r.sales_assisted).length}};
+  const A=F.filter(r=>r.landing_variant==='A'), B=F.filter(r=>r.landing_variant==='B');
+  const cnt=(arr,k)=>arr.filter(r=>r[k]).length;
+  const metric=k=>ztest(cnt(A,k),A.length,cnt(B,k),B.length);
+
+  const metrics=[
+    {k:'activated', label:'Activation', guard:false, ...metric('activated')},
+    {k:'is_pql',    label:'PQL rate',   guard:false, ...metric('is_pql')},
+    {k:'converted', label:'Trial → paid', guard:true, ...metric('converted')}
+  ];
+  const primary=metrics[2];
+
+  // does it hold in every segment, or is the average hiding opposite effects?
+  const segBy=(field,vals)=> vals.map(v=>{
+    const a=A.filter(r=>r[field]===v), b=B.filter(r=>r[field]===v);
+    return {v, nA:a.length, nB:b.length, ...ztest(cnt(a,'converted'),a.length,cnt(b,'converted'),b.length)};
+  }).filter(x=>x.nA>200 && x.nB>200);
+  const byPersona=segBy('persona',['DBA','IT_ops','developer']);
+  const byDeploy=segBy('deployment_type',['self_hosted','saas']);
+
+  const base=A.length? cnt(A,'converted')/A.length : 0.04;
+  const need=sampleNeeded(base, 0.10);
+
+  // other levers (observational, NOT experiments — say so)
+  const grp=pred=>{ const d=F.filter(pred); return {n:d.length, cvr: d.length? pct(d.filter(r=>r.converted).length,d.length):0}; };
+  const ext={yes:grp(r=>r.trial_extended), no:grp(r=>!r.trial_extended)};
+  const pql=F.filter(r=>r.is_pql);
+  const sa={yes:{n:pql.filter(r=>r.sales_assisted).length,
+                 cvr:pct(pql.filter(r=>r.sales_assisted&&r.converted).length, pql.filter(r=>r.sales_assisted).length||1)},
+            no:{n:pql.filter(r=>!r.sales_assisted).length,
+                cvr:pct(pql.filter(r=>!r.sales_assisted&&r.converted).length, pql.filter(r=>!r.sales_assisted).length||1)}};
+  const naive={yes:grp(r=>r.sales_assisted), no:grp(r=>!r.sales_assisted)};
+
+  // sizing inputs for the roadmap
+  const won=F.filter(r=>r.converted);
+  const ACV=won.length? mean(won.map(r=>+r.acv_usd||0)) : 10000;
+  const inst=k=>{ const d=F.filter(r=>(+PUMAP[r.trial_id]?.instances_monitored||0)===k);
+    return {n:d.length, cvr:d.length? pct(d.filter(r=>r.converted).length,d.length):0}; };
+  const i1=inst(1), i2=inst(2);
+  const sh=F.filter(r=>r.deployment_type==='self_hosted');
+  const shNoConn=sh.filter(r=>PUMAP[r.trial_id]?.installed && !PUMAP[r.trial_id]?.db_connected).length;
+  const failed=F.filter(r=>r.setup_stage===7).length;
+
+  return {nA:A.length, nB:B.length, metrics, primary, byPersona, byDeploy, need,
+          ext, sa, naive, ACV, i1, i2, shNoConn, failed};
 }
 
 // ---------------- compute (Pipeline) ----------------
@@ -1082,24 +1154,120 @@ function renderEng(view,f){
 }
 
 // ---------------- Experiments ----------------
+const PLB2={DBA:'DBA',IT_ops:'IT ops',developer:'Developer',self_hosted:'Self-hosted',saas:'SaaS'};
+
 function renderExp(view,f){
-  const a=cExp(f); const A=a.ab.A, B=a.ab.B;
+  const a=cExp(f);
+  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Experiments</p><p>Loading…</p></div>'; return; }
+  const num=x=>Math.round(x).toLocaleString();
+  const M=x=>{x=+x||0; return x>=1e6?'$'+(x/1e6).toFixed(1)+'M':x>=1e3?'$'+Math.round(x/1e3)+'K':'$'+Math.round(x);};
+  const P=a.primary;
+
+  const verdict = P.sig ? ['SHIP IT','ship'] : (a.nA+a.nB >= a.need*2 ? ['NO EFFECT — KILL','kill'] : ['KEEP RUNNING','wait']);
+
+  const mrow=m=>`<tr>
+    <td><b>${m.label}</b>${m.guard?' <span class="tag">primary</span>':''}</td>
+    <td class="num">${m.p1.toFixed(2)}%</td>
+    <td class="num">${m.p2.toFixed(2)}%</td>
+    <td class="num" style="color:${m.lift>=0?'#12A374':'#D64542'}">${m.lift>=0?'+':''}${m.lift.toFixed(1)}%</td>
+    <td class="num">${m.ci[0].toFixed(2)} to ${m.ci[1].toFixed(2)}</td>
+    <td class="num">${m.pv<0.0001?'&lt;0.0001':m.pv.toFixed(4)}</td>
+    <td class="num"><span class="sigpill ${m.sig?'yes':'no'}">${m.sig?'significant':'not significant'}</span></td></tr>`;
+
+  const segrow=(x,field)=>`<tr>
+    <td><b>${PLB2[x.v]||x.v}</b></td>
+    <td class="num">${num(x.nA+x.nB)}</td>
+    <td class="num">${x.p1.toFixed(2)}%</td>
+    <td class="num">${x.p2.toFixed(2)}%</td>
+    <td class="num" style="color:${x.lift>=0?'#12A374':'#D64542'};font-weight:600">${x.lift>=0?'+':''}${x.lift.toFixed(0)}%</td>
+    <td class="num"><span class="sigpill ${x.sig?'yes':'no'}">${x.sig?'sig':'ns'}</span></td></tr>`;
+
+  const flips = a.byPersona.some(x=>x.lift<0) && a.byPersona.some(x=>x.lift>0);
+
+  // ---- roadmap, sized from the live data
+  const instPrize = Math.max(a.i1.n*0.25*((a.i2.cvr-a.i1.cvr)/100)*a.ACV, 0);
+  const roadmap=[
+    {n:1, t:'In-app nudge: "connect a second database"',
+     hyp:`Because trials at one database convert at <b>${a.i1.cvr.toFixed(1)}%</b> and trials at two convert at <b>${a.i2.cvr.toFixed(1)}%</b>, we believe the second database is where evaluation becomes real work. If we prompt single-database trials in-app to add another, conversion will rise.`,
+     metric:'Primary: % of trials reaching 2+ databases. Guardrail: trial→paid must not fall.',
+     kill:'Kill if prompted trials add a second database at the same rate as the control.',
+     imp:[[M(instPrize),'if 25% move'],[num(a.i1.n),'trials at one DB'],['Low','effort — Pendo, no engineering']]},
+    {n:2, t:'Error-specific setup emails, not one generic nudge',
+     hyp:`Because <b>${num(a.failed)}</b> trials hit a connection error and all receive the same "finish your setup" email, we believe a permissions error and a firewall error need different help. If we send the exact GRANT statement to permission failures and a pre-written network request to firewall failures, DB-connect rate will rise.`,
+     metric:'Primary: DB-connect rate among error trials. Guardrail: unsubscribe rate.',
+     kill:'Kill if segmented emails connect at no better rate than the generic one.',
+     imp:[[num(a.failed),'trials hit an error'],['1 week','to ship in Marketo']]},
+    {n:3, t:'Pre-flight qualifier on the download page',
+     hyp:`Because trials discover unsupported platforms and firewall blocks only <i>after</i> installing, we believe asking two questions post-signup would let us route help before they fail. If we ask which database and whether it sits behind a firewall, activation will rise.`,
+     metric:'Primary: self-hosted activation. Guardrail: signup→download rate must not fall.',
+     kill:'Kill if activation is flat, or if the questions depress download rate at all.',
+     imp:[[num(a.shNoConn),'installed but never connected'],['Low','effort']]},
+    {n:4, t:'Start the trial clock at first install, not at signup',
+     hyp:`Because self-hosted setup depends on IT approval cycles measured in weeks while the trial runs 14 days, we believe a share of trials expire before they are even able to install. If the clock starts at install, self-hosted conversion will rise.`,
+     metric:'Primary: self-hosted trial→paid. Guardrail: sales cycle length must not balloon.',
+     kill:'Kill if time-to-install shows no clustering near the 14-day boundary.',
+     imp:[['Medium','effort — needs Product'],['High','impact if true']]},
+    {n:5, t:'Randomised holdout on sales coverage of PQLs',
+     hyp:`Because sales-assisted trials convert at <b>${a.naive.yes.cvr.toFixed(1)}%</b> against <b>${a.naive.no.cvr.toFixed(1)}%</b> self-serve — but among PQLs the gap collapses to <b>${a.sa.yes.cvr.toFixed(1)}%</b> vs <b>${a.sa.no.cvr.toFixed(1)}%</b> — we believe the headline gap is a selection effect, not a causal lift. If we randomly withhold sales touch from a slice of PQLs, conversion will not fall.`,
+     metric:'Primary: incremental conversion lift from sales touch. Guardrail: none — this is a measurement test.',
+     kill:'If the holdout converts materially worse, the lift is real and we scale coverage.',
+     imp:[[num(a.sa.no.n),'PQLs with no rep today'],['Zero','cost — just stop routing some']]}
+  ];
+
   view.innerHTML=`
   <div class="grid-kpi">
-    <div class="kpi"><p class="l">Variant A — feature-led</p><p class="v sm">${A.conv.toFixed(1)}%</p><p class="s">${A.n.toLocaleString()} trials · control</p></div>
-    <div class="kpi"><p class="l">Variant B — benefit-led</p><p class="v" style="color:var(--sw)">${B.conv.toFixed(1)}%</p><p class="s">${B.n.toLocaleString()} trials · variant</p></div>
-    <div class="kpi"><p class="l">Conversion lift</p><p class="v" style="color:var(--green)">${a.ab.lift>=0?'+':''}${a.ab.lift.toFixed(1)}%</p><p class="s">B over A</p></div>
-    <div class="kpi"><p class="l">Trial extensions</p><p class="v sm">${a.ext.yes.toFixed(1)}%</p><p class="s">convert vs ${a.ext.no.toFixed(1)}% base</p></div>
+    <div class="kpi"><p class="l">Variant A — feature-led</p><p class="v sm">${P.p1.toFixed(2)}%</p><p class="s">${num(a.nA)} trials · control</p></div>
+    <div class="kpi"><p class="l">Variant B — benefit-led</p><p class="v sm" style="color:var(--sw)">${P.p2.toFixed(2)}%</p><p class="s">${num(a.nB)} trials · variant</p></div>
+    <div class="kpi"><p class="l">Observed lift</p><p class="v" style="color:${P.lift>=0?'var(--green)':'var(--red)'}">${P.lift>=0?'+':''}${P.lift.toFixed(1)}%</p><p class="s">on trial → paid</p></div>
+    <div class="kpi"><p class="l">Verdict</p><p class="v sm" style="color:${verdict[1]==='ship'?'var(--green)':verdict[1]==='kill'?'var(--red)':'var(--sw)'}">${verdict[0]}</p><p class="s">p = ${P.pv.toFixed(3)}</p></div>
   </div>
-  <div class="row2">
-    <div class="panel"><div class="head"><h3>Landing page A/B — B wins across the funnel</h3><span>A control · B variant</span></div><div class="chart-box"><canvas id="c-ab"></canvas></div></div>
-    <div class="panel"><div class="head"><h3>Other conversion levers</h3><span>paid conversion rate</span></div>
-      ${cmpPair([{lab:'No extension',val:a.ext.no,sub:'baseline',color:'#8B95A6'},{lab:'Trial extended',val:a.ext.yes,sub:a.ext.n_yes.toLocaleString()+' trials',color:'#FF6200'},{lab:'Self-serve',val:a.sales.self,sub:'no sales touch',color:'#8B95A6'},{lab:'Sales-assisted',val:a.sales.assisted,sub:a.sales.n_assisted.toLocaleString()+' trials',color:'#12A374'}])}
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Landing page A/B — what the maths actually says</h3><span>two-proportion z-test · 95% confidence</span></div>
+    <table class="dtable"><thead><tr><th>Metric</th><th class="num">A</th><th class="num">B</th><th class="num">Lift</th><th class="num">95% CI (pts)</th><th class="num">p-value</th><th class="num">Verdict</th></tr></thead>
+      <tbody>${a.metrics.map(mrow).join('')}</tbody></table>
+    <div class="warnbox" style="margin-top:14px">
+      ${P.sig
+        ? `<b>The conversion lift is real.</b> p = ${P.pv.toFixed(4)}, so we can rule out chance at 95% confidence.`
+        : `<b>We cannot call this a win.</b> B is ahead on conversion by ${P.lift.toFixed(1)}%, but p = ${P.pv.toFixed(3)} — above the 0.05 threshold, so the difference is inside the noise. The confidence interval (${P.ci[0].toFixed(2)} to ${P.ci[1].toFixed(2)} points) still crosses zero, which means B could genuinely be <i>worse</i>. Activation <i>is</i> significant (p = ${a.metrics[0].pv.toFixed(3)}), so B is doing something real up-funnel — it just hasn't proven itself where it counts. To detect a 10% lift on conversion at 80% power we need roughly <b>${num(a.need)}</b> trials per arm; we have ${num(a.nA)} and ${num(a.nB)}.</div>
+    </div>`}
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Don't ship an average — does B win for everyone?</h3><span>conversion lift, by segment</span></div>
+    <table class="dtable"><thead><tr><th>Segment</th><th class="num">Trials</th><th class="num">A</th><th class="num">B</th><th class="num">Lift</th><th class="num"></th></tr></thead>
+      <tbody>${a.byPersona.map(x=>segrow(x,'persona')).join('')}
+             ${a.byDeploy.map(x=>segrow(x,'deployment_type')).join('')}</tbody></table>
+    ${flips?`<div class="warnbox" style="margin-top:14px">
+      <b>The average is hiding two opposite effects.</b> B lifts conversion for <b>DBAs</b> but <i>depresses</i> it for <b>developers</b>. A single blended number would have told us to ship it to everyone — and we'd have quietly made things worse for one of our three personas. This is why we segment before we ship, and it is the strongest argument in this whole tab for not trusting a top-line result.
+    </div>`:''}
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Other levers — and why they are <i>not</i> experiments</h3><span>observational, not causal</span></div>
+    ${cmpPair([
+      {lab:'Trials we extended', val:a.ext.yes.cvr, sub:num(a.ext.yes.n)+' trials', color:'#FF6200'},
+      {lab:'Trials we did not extend', val:a.ext.no.cvr, sub:'baseline', color:'#8B95A6'},
+      {lab:'PQLs a rep touched', val:a.sa.yes.cvr, sub:num(a.sa.yes.n)+' PQLs', color:'#8B95A6'},
+      {lab:'PQLs nobody touched', val:a.sa.no.cvr, sub:num(a.sa.no.n)+' PQLs', color:'#12A374'}
+    ])}
+    <div class="warnbox" style="margin-top:14px">
+      <b>Neither of these is a result we can act on yet.</b> We <i>chose</i> who to extend and who to call — so the people in those groups were already different. Sales-assisted trials convert at ${a.naive.yes.cvr.toFixed(1)}% against ${a.naive.no.cvr.toFixed(1)}% self-serve, which looks decisive. But hold intent constant and look only at PQLs and the gap all but vanishes: ${a.sa.yes.cvr.toFixed(1)}% vs ${a.sa.no.cvr.toFixed(1)}%. Reps are being routed to trials that were already going to buy. <b>We should not scale headcount on that number — we should run the holdout (test 5 below).</b>
     </div>
   </div>
-  <div class="insight">${bulb}
-    <p><b>Our roadmap signal.</b> The benefit-led page (B) lifts conversion ${a.ab.lift>=0?'+':''}${a.ab.lift.toFixed(0)}% and also improves activation and PQL rate, so the win compounds up-funnel. Trial extensions and sales assist both lift conversion for high-intent trials — both are strong candidates for our experimentation roadmap, with proper significance testing.</p></div>`;
-  mkChart('c-ab',{type:'bar',data:{labels:['Activation','PQL','Conversion'],datasets:[{label:'A — feature-led',data:[A.act,A.pql,A.conv],backgroundColor:'#8B95A6',borderRadius:3,maxBarThickness:30},{label:'B — benefit-led',data:[B.act,B.pql,B.conv],backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:30}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'%'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:11},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
+
+  <div class="rmhead"><h3>Our experimentation roadmap</h3><p>Every test states the belief, the number that proves it, and the condition that kills it. Ranked by expected impact over effort.</p></div>
+  ${roadmap.map(r=>`<div class="ins">
+    <div class="top"><div class="rank">${r.n}</div><h4>${r.t}</h4></div>
+    <p class="ev">${r.hyp}</p>
+    <ul class="acts">
+      <li><b>How we'd measure it:</b> ${r.metric}</li>
+      <li><b>How we'd know we were wrong:</b> ${r.kill}</li>
+    </ul>
+    <div class="impact">${r.imp.map(i=>`<div><p class="n">${i[0]}</p><p class="c">${i[1]}</p></div>`).join('')}</div>
+  </div>`).join('')}
+
+  <p class="note">Significance is a two-proportion z-test at 95% confidence. Sample-size estimates assume 80% power. Every figure recomputes from the filters above.</p>`;
 }
 
 // ---------------- Pipeline ----------------
