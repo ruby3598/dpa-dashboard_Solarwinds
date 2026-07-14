@@ -156,6 +156,10 @@
   .rk{flex-shrink:0;width:74px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
       color:var(--text3);padding-top:3px;}
   .rk.kill{color:var(--red);}
+  .rlist.plain{margin:4px 0 0;}
+  .rlist.plain li{padding:8px 0;border-bottom:1px solid var(--line);}
+  .rlist.plain li:last-child{border-bottom:0;}
+  .rlist.plain .rk{width:88px;}
   .ctrlbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 14px;}
   .ctrlbar .cl{font-size:11.5px;color:var(--text3);margin-left:4px;}
   .ctrlbar select{font-size:12px;padding:5px 8px;}
@@ -1191,43 +1195,6 @@ function renderExp(view,f){
 
   // ---- roadmap, sized from the live data
   const instPrize = Math.max(a.i1.n*0.25*((a.i2.cvr-a.i1.cvr)/100)*a.ACV, 0);
-  const roadmap=[
-    {n:1, t:'Nudge trials to add a second database',
-     why:`One database converts at <b>${a.i1.cvr.toFixed(1)}%</b>. Two converts at <b>${a.i2.cvr.toFixed(1)}%</b>.`,
-     test:'In-app prompt when a trial has only one database connected.',
-     measure:'% of trials reaching 2+ databases. Guardrail: trial→paid must not fall.',
-     kill:'Prompted trials add a second database at the same rate as control.',
-     imp:[[M(instPrize),'if 25% move'],[num(a.i1.n),'stuck at one'],['Low','Pendo, no engineering']]},
-
-    {n:2, t:'Send the fix for their error, not a generic reminder',
-     why:`<b>${num(a.failed)}</b> trials hit a connection error and all get the same "finish your setup" email.`,
-     test:'Split by error code: GRANT statement for permissions, network request for firewalls.',
-     measure:'DB-connect rate among error trials. Guardrail: unsubscribe rate.',
-     kill:'Segmented emails connect no better than the generic one.',
-     imp:[[num(a.failed),'trials hit an error'],['1 week','to ship in Marketo']]},
-
-    {n:3, t:'Ask two questions on the download page',
-     why:'Trials find out their platform is unsupported only after installing.',
-     test:'Which database? Behind a firewall? Asked after signup, so no signups are lost.',
-     measure:'Self-hosted activation. Guardrail: download rate must not fall.',
-     kill:'Activation is flat, or the questions depress downloads at all.',
-     imp:[[num(a.shNoConn),'installed, never connected'],['Low','effort']]},
-
-    {n:4, t:'Start the trial clock at install, not at signup',
-     why:'Setup waits on IT approval — weeks. The trial runs 14 days.',
-     test:'Clock starts when the software first runs.',
-     measure:'Self-hosted trial→paid. Guardrail: sales cycle must not balloon.',
-     kill:'Time-to-install shows no clustering near the 14-day boundary.',
-     imp:[['Medium','needs Product'],['High','impact if true']]},
-
-    {n:5, t:'Hold back sales on some PQLs, and measure',
-     why:`Sales-assisted looks 4× better — but among PQLs the gap nearly vanishes (<b>${a.sa.yes.cvr.toFixed(1)}%</b> vs <b>${a.sa.no.cvr.toFixed(1)}%</b>). Reps get routed to buyers.`,
-     test:'Randomly withhold sales touch from a slice of PQLs.',
-     measure:'The true incremental lift from a rep touching a trial.',
-     kill:'If the holdout converts materially worse, the lift is real and we scale coverage.',
-     imp:[[num(a.sa.no.n),'PQLs with no rep'],['Zero','cost']]}
-  ];
-
   view.innerHTML=`
   <div class="grid-kpi">
     <div class="kpi"><p class="l">Variant A — feature-led</p><p class="v sm">${P.p1.toFixed(2)}%</p><p class="s">${num(a.nA)} trials · control</p></div>
@@ -1270,17 +1237,15 @@ function renderExp(view,f){
     </div>
   </div>
 
-  <div class="rmhead"><h3>Our experimentation roadmap</h3><p>Ranked by impact over effort. Every test names the number that proves it — and the result that kills it.</p></div>
-  ${roadmap.map(r=>`<div class="ins">
-    <div class="top"><div class="rank">${r.n}</div><h4>${r.t}</h4></div>
-    <ul class="rlist">
-      <li><span class="rk">Why</span> ${r.why}</li>
-      <li><span class="rk">Test</span> ${r.test}</li>
-      <li><span class="rk">Measure</span> ${r.measure}</li>
-      <li><span class="rk kill">Kill it if</span> ${r.kill}</li>
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>So what do we do with this test?</h3><span>our call</span></div>
+    <ul class="rlist plain">
+      <li><span class="rk">Don't ship</span> The conversion lift isn't significant. Shipping it would be shipping a coin flip.</li>
+      <li><span class="rk">Don't kill</span> Activation <i>is</i> significantly up, so B is doing something real. We just can't see it at the bottom yet.</li>
+      <li><span class="rk">Keep running</span> We need roughly ${num(a.need)} trials per arm to call a 10% lift. We're at ${num(a.nA)} and ${num(a.nB)}.</li>
+      <li><span class="rk kill">And watch</span> B wins for DBAs and loses for developers. If that holds, the answer isn't "ship B" — it's "ship B to DBAs".</li>
     </ul>
-    <div class="impact">${r.imp.map(i=>`<div><p class="n">${i[0]}</p><p class="c">${i[1]}</p></div>`).join('')}</div>
-  </div>`).join('')}
+  </div>
 
   <p class="note">Significance is a two-proportion z-test at 95% confidence: we call a result real only when p &lt; 0.05. Sample-size estimates assume 80% power. Every figure recomputes from the filters above.</p>`;
 }
