@@ -144,6 +144,36 @@
   .warnbox{background:rgba(214,69,66,.08);border:1px solid rgba(214,69,66,.25);border-radius:10px;
            padding:11px 13px;font-size:13px;line-height:1.5;color:var(--text);}
   .sub2{font-size:10.5px;color:var(--text3);}
+  .ctrlbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 14px;}
+  .ctrlbar .cl{font-size:11.5px;color:var(--text3);margin-left:4px;}
+  .ctrlbar select{font-size:12px;padding:5px 8px;}
+  .chtog{margin-left:auto;font-family:var(--font);font-size:11.5px;padding:5px 11px;border:1px solid var(--line2);
+         background:var(--card);color:var(--text2);border-radius:8px;cursor:pointer;}
+  .chtog:hover{border-color:var(--sw);color:var(--sw);}
+  .chartwrap{background:#FAFBFC;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px;}
+  tr.totrow td{background:var(--char);color:#fff;font-weight:600;border-bottom:2px solid var(--sw);position:sticky;top:0;z-index:2;}
+  tr.totrow td .p{color:#B9BEC6;}
+  tr.totrow .ko{background:rgba(255,255,255,.10);color:#fff;}
+  .benchpill{font-size:9.5px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;
+             background:rgba(255,255,255,.16);color:#fff;padding:2px 7px;border-radius:20px;margin-left:6px;}
+  th.srt{cursor:pointer;user-select:none;white-space:nowrap;}
+  th.srt:hover{color:var(--sw);}
+  th.srt.on{color:var(--sw);}
+  .mk{display:inline-block;width:13px;margin-right:3px;font-size:11px;}
+  .mk.up{color:#12A374;} .mk.dn{color:#D64542;}
+  .mock{background:#FAFBFC;border:1px solid var(--line);border-radius:12px;padding:0;overflow:hidden;}
+  .mock .bar{background:#EDEFF2;padding:8px 12px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--line);}
+  .mock .dot3{width:9px;height:9px;border-radius:50%;background:#C9CED6;}
+  .mock .url{font-size:10.5px;color:var(--text3);background:#fff;border-radius:5px;padding:3px 9px;margin-left:8px;flex:1;}
+  .mock .inner{padding:22px 24px;background:#fff;}
+  .mock h5{font-family:var(--disp);font-size:16px;margin:0 0 4px;}
+  .mock .lead{font-size:12.5px;color:var(--text2);margin:0 0 18px;}
+  .mock .qq{font-size:12.5px;font-weight:600;margin:0 0 8px;}
+  .mock .opts{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px;}
+  .mock .opt{font-size:11.5px;border:1px solid var(--line2);border-radius:20px;padding:5px 11px;color:var(--text2);background:#fff;}
+  .mock .opt.hl{border-color:var(--sw);color:var(--swk);background:var(--sw-tint);font-weight:500;}
+  .mock .btn{background:var(--sw);color:#fff;font-size:12.5px;font-weight:600;padding:9px 20px;border-radius:8px;display:inline-block;}
+  .mock .skip{font-size:11px;color:var(--text3);margin-left:12px;}
   .errrow{padding:11px 0;border-bottom:1px solid var(--line);}
   .errrow:last-child{border-bottom:0;}
   .errfix{font-size:12.5px;color:var(--text2);margin:0 0 0 160px;line-height:1.5;}
@@ -214,7 +244,14 @@ let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
 let acqMode='stages';   // 'stages' | 'funnel' | 'cost'
 let acqJourney=true;    // Journey (ever reached) vs Now (currently sits)
-let acqRow='campaign';  // 'campaign' | 'adgroup'
+let acqRow='campaign';   // campaign | adgroup | deployment | persona | company_size
+let acqSort={key:'signups', dir:-1};
+let acqChart=false;
+const ROWDIMS=[['campaign','Campaigns'],['adgroup','Ad groups'],['deployment','Deployment'],
+               ['persona','Persona'],['company_size','Company size']];
+const DIMFIELD={deployment:'deployment_type', persona:'persona', company_size:'company_size'};
+const DIMLABEL={self_hosted:'Self-hosted', saas:'SaaS', DBA:'DBA', IT_ops:'IT ops', developer:'Developer',
+                SMB:'SMB', mid_market:'Mid-market', enterprise:'Enterprise'};
 const HAVE = () => TRIALS && TRIALS.length;
 
 const mean = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
@@ -458,6 +495,25 @@ function cAcq(f){
       actR:pct(o.a,o.s), pqlR:pct(o.q,o.s), now:o.now, jr:o.jr, ko:o.ko, ad_groups:agBy[c]||[]};
   });
 
+  // rows can also be a plain dimension (deployment / persona / company size)
+  const dimRows = (field) => {
+    const m={};
+    F.forEach(r=>{ const k=r[field]||'—';
+      const o=m[k]=m[k]||{name:k,s:0,a:0,q:0,cv:0,late:0,wonAcv:0,spend:0,
+        now:[0,0,0,0,0,0,0,0], jr:[0,0,0,0,0,0,0,0], ko:0};
+      o.s++; o.spend+=(+r.cac_usd||0);
+      if(r.activated)o.a++; if(r.is_pql)o.q++; if(r.converted)o.cv++;
+      const st=stageOf(r);
+      o.now[st]++; for(let k2=1;k2<=st;k2++) o.jr[k2]++;
+      if(isDead(r)) o.ko++;
+      const op=pipeByTrial[r.trial_id];
+      if(op){ if(LATE.has(op.stage)) o.late++; if(op.won) o.wonAcv+=(+op.acv_usd||0); } });
+    return Object.values(m).map(o=>({channel:o.name, campaign:o.name, name:o.name,
+      signups:o.s, act:o.a, pql:o.q, conv:o.cv, late:o.late, wonAcv:o.wonAcv, spend:o.spend,
+      now:o.now, jr:o.jr, ko:o.ko, cps:o.s?o.spend/o.s:0, cpa:o.cv?o.spend/o.cv:0,
+      cvr:pct(o.cv,o.s), actR:pct(o.a,o.s), pqlR:pct(o.q,o.s), campaigns:[], ad_groups:[]}));
+  };
+
   const byCh={};
   campaigns.forEach(c=>{ const o=byCh[c.channel]=byCh[c.channel]||{signups:0,act:0,pql:0,conv:0,late:0,wonAcv:0,spend:0,ko:0,
       now:[0,0,0,0,0,0,0,0], jr:[0,0,0,0,0,0,0,0], camps:[]};
@@ -486,7 +542,23 @@ function cAcq(f){
   const trend={labels:ms,
     spend:ms.map(m=>{ const g=spendM[m]; const share=g&&g.sg?Math.min(bm[m].s/g.sg,1):0; return (g?g.sp:0)*share; }),
     cps:ms.map(m=>{ const g=spendM[m]; const share=g&&g.sg?Math.min(bm[m].s/g.sg,1):0; const sp=(g?g.sp:0)*share; return r1(bm[m].s?sp/bm[m].s:0); })};
-  return {totals,channels,trend,hasCampaign:!!(CAMPAIGN&&CAMPAIGN.length)};
+  const flatAG=[];
+  Object.values(agBy).forEach(list=>list.forEach(g=>flatAG.push(g)));
+  campaigns.forEach(c=>c.ad_groups.forEach(g=>{ g.channel=c.channel; g.campaign=c.campaign; }));
+
+  // filter-aware benchmark row
+  const T={signups:F.length, act:F.filter(r=>r.activated).length, pql:F.filter(r=>r.is_pql).length,
+    conv:F.filter(r=>r.converted).length, spend:F.reduce((a,r)=>a+(+r.cac_usd||0),0),
+    late:0, wonAcv:0, now:[0,0,0,0,0,0,0,0], jr:[0,0,0,0,0,0,0,0], ko:0};
+  F.forEach(r=>{ const st=stageOf(r); T.now[st]++; for(let k=1;k<=st;k++) T.jr[k]++;
+    if(isDead(r)) T.ko++;
+    const op=pipeByTrial[r.trial_id];
+    if(op){ if(LATE.has(op.stage)) T.late++; if(op.won) T.wonAcv+=(+op.acv_usd||0); } });
+  T.cvr=pct(T.conv,T.signups); T.actR=pct(T.act,T.signups); T.pqlR=pct(T.pql,T.signups);
+  T.cps=T.signups?T.spend/T.signups:0; T.cpa=T.conv?T.spend/T.conv:0;
+  T.name='All'; T.channel='All'; T.campaign='All';
+
+  return {totals,channels,trend,flatAG,dimRows,T,hasCampaign:!!(CAMPAIGN&&CAMPAIGN.length)};
 }
 
 // ---------------- compute (Engagement) ----------------
@@ -610,7 +682,7 @@ function overviewHTML(){
     <div class="panel"><h3>Conversion by month</h3><div class="chart-box"><canvas id="trend"></canvas></div></div>
   </div>
   <div class="insight">${bulb}
-    <p><b>Biggest recoverable leak:</b> self-hosted trials abandon at setup — filter Deployment to compare self-hosted vs SaaS activation. Priority levers: in-product setup guidance and a setup-help nurture sequence.</p>
+    <p><b>Our biggest recoverable leak:</b> self-hosted trials abandon at setup — filter Deployment to compare self-hosted vs SaaS activation. Our priority levers: in-product setup guidance and a setup-help nurture sequence.</p>
   </div>`;
 }
 function renderOverview(view,f){
@@ -646,7 +718,8 @@ function renderActivation(view,f){
       <p class="s">${a.kpis.saasN? 'no install step' : 'no SaaS trials in this slice'}</p></div>
   </div>
   <div class="row2">
-    <div class="panel"><div class="head"><h3>Activation funnel</h3><span>grey % = step conversion</span></div>${funnelRows}</div>
+    <div class="panel"><div class="head"><h3>Activation funnel</h3><span>grey % = step conversion</span></div>${funnelRows}
+      <p class="note"><b>PQL</b> = 3+ databases connected <b>and</b> engagement score ≥ 48. Breadth proves they've deployed it; engagement proves they're using it. PQLs convert ~3× better than everyone else.</p></div>
     <div class="panel"><div class="head"><h3>${BOTH?'Where self-hosted falls behind':a.sel+' vs the rest of the portfolio'}</h3><span>% of segment</span></div>
       <div class="chart-box"><canvas id="c-dep"></canvas></div>
       ${BOTH?'':`<p class="note">${a.sel} ships self-hosted only, so there is no SaaS comparison within it. Benchmarked against the other database products instead — the SaaS product (DPM) is the outlier.</p>`}</div>
@@ -655,7 +728,7 @@ function renderActivation(view,f){
     <div class="panel"><div class="head"><h3>Why trials don't convert</h3><span>non-converting trials</span></div>${reasonRows}</div>
     <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
       ${(a.kpis.shN&&a.kpis.saasN)
-        ? `<p><b>The leak is setup, not selling.</b> Self-hosted trials activate at ${a.kpis.sh.toFixed(0)}% vs ${a.kpis.saas.toFixed(0)}% for SaaS — the gap opens at install and DB-connect. "Setup too complex" and "couldn't connect DB" lead the drop-off reasons. Levers: in-product setup wizard, a connection health-check, and a self-hosted setup-help nurture track.</p>`
+        ? `<p><b>Our leak is setup, not selling.</b> Our self-hosted trials activate at ${a.kpis.sh.toFixed(0)}% vs ${a.kpis.saas.toFixed(0)}% for SaaS — the gap opens at install and DB-connect. "Setup too complex" and "couldn't connect DB" lead the drop-off reasons. Levers: in-product setup wizard, a connection health-check, and a self-hosted setup-help nurture track.</p>`
         : `<p><b>Deployment and product are the same variable.</b> DPA and SQL Sentry ship self-hosted only; DPM ships SaaS only — there is no overlap, so a single-product view has nothing to compare against. That also means the activation gap cannot be cleanly attributed to setup friction alone: "self-hosted" and "not DPM" are statistically indistinguishable here. What the drop-off reasons do show is that "setup too complex" and "couldn't connect DB" dominate — which points at setup rather than product quality.</p>`}
     </div></div>
   </div>`;
@@ -675,132 +748,200 @@ function renderActivation(view,f){
 }
 
 // ---------------- Acquisition & CAC ----------------
+const SORTS={
+  signups:['Signups', r=>r.signups],
+  spend:['Spend', r=>r.spend],
+  actR:['Activation', r=>r.actR],
+  pqlR:['PQL rate', r=>r.pqlR],
+  cvr:['Win %', r=>r.cvr],
+  cpa:['Cost / customer', r=>(r.conv? r.cpa : Infinity)],
+  wonAcv:['Won ACV', r=>r.wonAcv]
+};
+const MIN_N=100;   // never star or flag a rounding error
+
 function renderAcq(view,f){
   const a=cAcq(f);
   if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Acquisition &amp; CAC</p><p>Loading data…</p></div>'; return; }
-  if(!a.hasCampaign) ensureCampaign();
-  const STG=['','Signed up','Installed','Connected','Activated','PQL','Opportunity','Closed Won'];
-  const STGS=['','Sign','Inst','Conn','Act','PQL','Opp','Won'];
+  const money=n2=>'$'+Math.round(n2).toLocaleString();
+  const T=a.T, DIM=DIMFIELD[acqRow];
+  const num=x=>Math.round(x).toLocaleString();
+
+  // ---- build the row set for whatever dimension is selected
+  let rowsData, drillable=false;
+  if(DIM){ rowsData=a.dimRows(DIM); }
+  else if(acqRow==='adgroup'){ rowsData=a.flatAG; }
+  else { rowsData=a.channels; drillable=true; }
+
+  const getv=SORTS[acqSort.key][1];
+  const sortRows=arr=>[...arr].sort((x,y)=>{ const vx=getv(x), vy=getv(y);
+    if(vx===vy) return 0; return (vx<vy?-1:1)*acqSort.dir; });
+  rowsData=sortRows(rowsData);
+
+  // ---- star / flag against the filtered benchmark
+  const mark=r=>{
+    if(r.signups<MIN_N) return '';
+    if(r.cvr >= T.cvr*1.25) return '<span class="mk up" title="Beats the average — scale this">&#9733;</span>';
+    if(r.cvr <= T.cvr*0.75) return '<span class="mk dn" title="Below average — cut candidate">&#9660;</span>';
+    return '';
+  };
+
+  const label=r=> DIM ? (DIMLABEL[r.name]||r.name) : (r.name || CH_LABELS[r.channel]||r.channel);
+
+  const STGS=[1,2,3,4,5,6,7];
   const heat=(v,max)=>{ if(!v) return ''; const t=Math.min(v/(max||1),1);
     return `background:rgba(255,98,0,${(0.10+t*0.78).toFixed(2)});color:${t>0.45?'#fff':'var(--text)'};`; };
 
-  function stageCells(o){
+  function stageCells(o,isTotal){
     const arr = acqJourney ? o.jr : o.now;
     const base = o.jr[1]||o.signups||1;
     const max = acqJourney ? base : Math.max(...arr.slice(1));
     let h='';
-    for(let k=1;k<=7;k++){
-      const v=arr[k]||0;
-      const p=base?Math.round(v/base*100):0;
-      h+=`<td class="stg${k===1?' stagehead':''}" style="${k>1?heat(v,max):''}">`
-       + (v? `<span class="n">${v.toLocaleString()}</span>${k>1?`<span class="p">${p}%</span>`:''}` : '<span class="p">·</span>')
+    for(const k of STGS){
+      const v=arr[k]||0, p=base?Math.round(v/base*100):0;
+      h+=`<td class="stg${k===1?' stagehead':''}" style="${(k>1&&!isTotal)?heat(v,max):''}">`
+       + (v? `<span class="n">${num(v)}</span>${k>1?`<span class="p">${p}%</span>`:''}` : '<span class="p">·</span>')
        + `</td>`;
     }
-    h+=`<td class="ko">${(o.ko||0).toLocaleString()}</td>`;
-    h+=`<td class="win" style="color:${o.cvr>=a.totals.cvr?'#12A374':'var(--text3)'}">${o.cvr.toFixed(1)}%</td>`;
+    h+=`<td class="ko">${num(o.ko||0)}</td>`;
+    const col = isTotal ? 'var(--text)' : (o.cvr>=T.cvr?'#12A374':'#D64542');
+    h+=`<td class="win" style="color:${col}">${o.cvr.toFixed(1)}%</td>`;
     return h;
   }
+  const cells=(o,isTotal)=> acqMode==='stages' ? stageCells(o,isTotal)
+    : acqMode==='funnel'
+    ? `<td class="num">${num(o.signups)}</td><td class="num">${o.actR.toFixed(0)}%</td>
+       <td class="num">${o.pqlR.toFixed(0)}%</td>
+       <td class="num" style="color:${isTotal?'var(--text)':(o.cvr>=T.cvr?'#12A374':'#D64542')}">${o.cvr.toFixed(1)}%</td>
+       <td class="num">${num(o.late||0)}</td><td class="num"><b>${o.wonAcv?usd(o.wonAcv):'—'}</b></td>`
+    : `<td class="num">${money(o.spend)}</td><td class="num">${num(o.signups)}</td>
+       <td class="num">${o.cvr.toFixed(1)}%</td><td class="num">$${Math.round(o.cps)}</td>
+       <td class="num"><b style="color:${isTotal?'var(--text)':(o.conv&&o.cpa<=T.cpa?'#12A374':'#D64542')}">${o.conv?money(o.cpa):'—'}</b></td>`;
 
-  let head, rows='';
+  // ---- header, with sortable columns
+  const sortable=(key,txt,cls)=>`<th class="num ${cls||''} srt${acqSort.key===key?' on':''}" data-sort="${key}">${txt}${acqSort.key===key?(acqSort.dir<0?' ▾':' ▴'):''}</th>`;
+  let head;
   if(acqMode==='stages'){
-    head=`<tr><th>${acqRow==='adgroup'?'Ad group':'Source'}</th>`+
-      STGS.slice(1).map((s,i)=>`<th class="num ctr${i===0?' stagehead':''}" title="${STG[i+1]}">${i+1}</th>`).join('')+
-      `<th class="num ctr">KO</th><th class="num">Win%</th></tr>`;
+    head=`<tr><th>${DIM?ROWDIMS.find(d=>d[0]===acqRow)[1]:(acqRow==='adgroup'?'Ad group':'Source')}</th>`
+      + STGS.map((k,i)=>`<th class="num ctr${i===0?' stagehead':''}">${k}</th>`).join('')
+      + `<th class="num ctr">KO</th>${sortable('cvr','Win%')}</tr>`;
   } else if(acqMode==='funnel'){
-    head=`<tr><th>Source</th><th class="num">Signups</th><th class="num">Activated</th><th class="num">PQL</th><th class="num">Paid</th><th class="num">Late-stage</th><th class="num">Won ACV</th></tr>`;
+    head=`<tr><th>Source</th>${sortable('signups','Signups')}${sortable('actR','Activated')}${sortable('pqlR','PQL')}${sortable('cvr','Win %')}<th class="num">Late-stage</th>${sortable('wonAcv','Won ACV')}</tr>`;
   } else {
-    head=`<tr><th>Source</th><th class="num">Spend</th><th class="num">Signups</th><th class="num">Conv. rate</th><th class="num">$/signup</th><th class="num">$/customer</th></tr>`;
+    head=`<tr><th>Source</th>${sortable('spend','Spend')}${sortable('signups','Signups')}${sortable('cvr','Win %')}<th class="num">$/signup</th>${sortable('cpa','$/customer')}</tr>`;
   }
 
-  const money=n2=>'$'+Math.round(n2).toLocaleString();
-  const cells=(o,isAd)=> acqMode==='stages' ? stageCells(o)
-    : acqMode==='funnel'
-    ? `<td class="num">${o.signups.toLocaleString()}</td>
-       <td class="num">${o.actR!=null?o.actR.toFixed(0)+'%':'—'}</td>
-       <td class="num">${(o.pqlR!=null&&!isAd)?o.pqlR.toFixed(0)+'%':'—'}</td>
-       <td class="num">${o.cvr.toFixed(1)}%</td>
-       <td class="num">${!isAd?(o.late||0).toLocaleString():'—'}</td>
-       <td class="num"><b>${!isAd&&o.wonAcv?usd(o.wonAcv):'—'}</b></td>`
-    : `<td class="num">${money(o.spend)}</td>
-       <td class="num">${o.signups.toLocaleString()}</td>
-       <td class="num">${o.cvr.toFixed(1)}%</td>
-       <td class="num">$${Math.round(o.cps)}</td>
-       <td class="num"><b>${o.conv?money(o.cpa):'—'}</b></td>`;
-
-  // FLAT ad-group listing when Stages + Ad groups is selected
-  if(acqMode==='stages' && acqRow==='adgroup'){
-    const flat=[];
-    a.channels.forEach(c=>c.campaigns.forEach(cm=>cm.ad_groups.forEach(g=>
-      flat.push({...g, cvr:g.cvr, campaign:cm.campaign, channel:c.channel}))));
-    flat.sort((x,y)=>y.signups-x.signups).slice(0,25).forEach(g=>{
-      rows+=`<tr><td><b>${g.name}</b><br><span class="p" style="font-size:10.5px;color:var(--text3)">${CH_LABELS[g.channel]||g.channel} · ${g.campaign}</span></td>${stageCells(g)}</tr>`;
-    });
-  } else {
-    a.channels.forEach(c=>{
-      const openC = acqOpen.ch===c.channel;
-      rows+=`<tr class="clk" data-ch="${c.channel}"><td><span class="caret${openC?' open':''}">&#9656;</span><b>${CH_LABELS[c.channel]||c.channel}</b></td>${cells(c,false)}</tr>`;
+  // ---- body
+  let rows=`<tr class="totrow"><td><b>All ${DIM?'':'sources'}</b> <span class="benchpill">benchmark</span></td>${cells(T,true)}</tr>`;
+  if(drillable){
+    rowsData.forEach(c=>{
+      const openC=acqOpen.ch===c.channel;
+      rows+=`<tr class="clk" data-ch="${c.channel}"><td>${mark(c)}<span class="caret${openC?' open':''}">&#9656;</span><b>${CH_LABELS[c.channel]||c.channel}</b></td>${cells(c)}</tr>`;
       if(!openC) return;
-      c.campaigns.forEach(cm=>{
-        const openM = acqOpen.cmp===cm.campaign;
-        rows+=`<tr class="clk lvl2" data-cmp="${cm.campaign}"><td><span class="caret${openM?' open':''}">&#9656;</span>${cm.campaign}</td>${cells(cm,false)}</tr>`;
+      sortRows(c.campaigns).forEach(cm=>{
+        const openM=acqOpen.cmp===cm.campaign;
+        rows+=`<tr class="clk lvl2" data-cmp="${cm.campaign}"><td>${mark(cm)}<span class="caret${openM?' open':''}">&#9656;</span>${cm.campaign}</td>${cells(cm)}</tr>`;
         if(!openM) return;
-        cm.ad_groups.forEach(g=>{ rows+=`<tr class="lvl3"><td>${g.name}</td>${cells(g,true)}</tr>`; });
+        sortRows(cm.ad_groups).forEach(g=>{
+          rows+=`<tr class="lvl3"><td>${mark(g)}${g.name}</td>${cells(g)}</tr>`; });
       });
     });
+  } else {
+    rowsData.slice(0, DIM?20:30).forEach(r=>{
+      const sub = (!DIM && r.campaign) ? `<br><span class="sub2">${CH_LABELS[r.channel]||r.channel} · ${r.campaign}</span>` : '';
+      rows+=`<tr><td>${mark(r)}<b>${label(r)}</b>${sub}</td>${cells(r)}</tr>`; });
   }
 
-  // quality vs cost scatter-ish: activation rate by channel
-  const byAct=[...a.channels].filter(c=>c.signups>=50).sort((x,y)=>y.actR-x.actR);
-  const amax=Math.max(...byAct.map(c=>c.actR),1);
-  const actRows=byAct.map(c=>`<div class="frow"><span class="fname" style="width:110px">${CH_LABELS[c.channel]||c.channel}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(c.actR/amax*100,2)}%;background:${c.actR>=a.totals.actR?'#12A374':'#D64542'}"></div></div><span class="fnum">${c.actR.toFixed(0)}%</span></div>`).join('');
+  // ---- collapsible chart, driven entirely by the table's own state
+  const chartRows=(drillable?rowsData:rowsData).slice(0,12);
+  const sortLabel=SORTS[acqSort.key][0];
+
+  const actRows=[...a.channels].filter(c=>c.signups>=50).sort((x,y)=>y.actR-x.actR)
+    .map(c=>`<div class="frow"><span class="fname" style="width:110px">${CH_LABELS[c.channel]||c.channel}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(c.actR/Math.max(...a.channels.map(z=>z.actR),1)*100,2)}%;background:${c.actR>=T.actR?'#12A374':'#D64542'}"></div></div><span class="fnum">${c.actR.toFixed(0)}%</span></div>`).join('');
 
   const legend = acqMode==='stages'
     ? `<p class="note">1 Signed up · 2 Installed · 3 Connected · 4 Activated · 5 PQL · 6 Opportunity · 7 Closed Won · KO = lost.
-       <b>Journey</b> counts every trial that <i>ever reached</i> a stage. <b>Now</b> counts where each trial <i>currently sits</i> — so Now sums to the total, Journey does not.
-       Stages 6–7 only exist for <b>sales-assisted</b> deals: self-serve customers buy without an opportunity record ever being created, so they convert without appearing at stage 6 or 7. Win% therefore counts <i>all</i> paying customers, not just Closed Won.
-       ${acqRow==='adgroup'?'Ad-group stages are allocated from the parent campaign by signup share — the ad-group ID is not stored on the trial record.':''}</p>`
-    : (acqMode==='funnel'
-      ? '<p class="note">Late-stage = opportunities at Proposal, Negotiation or Closed Won. PQL and pipeline are trial-level, so they are not broken out per ad group.</p>'
-      : '');
+       <b>Journey</b> counts every trial that ever reached a stage; <b>Now</b> counts where each trial currently sits.
+       Stages 6–7 exist only for sales-assisted deals, so Win% counts all paying customers, not just Closed Won.
+       &#9733; beats our average by 25%+ · &#9660; falls 25%+ below it. Rows under ${MIN_N} signups are never marked.</p>`
+    : '';
 
   view.innerHTML=`
   <div class="grid-kpi">
-    <div class="kpi"><p class="l">Marketing spend</p><p class="v sm">${usd(a.totals.spend)}</p><p class="s">selected slice</p></div>
-    <div class="kpi"><p class="l">Signups</p><p class="v sm">${a.totals.signups.toLocaleString()}</p><p class="s">trials generated</p></div>
-    <div class="kpi"><p class="l">Cost per signup</p><p class="v sm">$${a.totals.cps.toFixed(1)}</p><p class="s">spend ÷ signups</p></div>
-    <div class="kpi"><p class="l">Cost per paid customer</p><p class="v" style="color:var(--sw)">${a.totals.conv?money(a.totals.cpa):'—'}</p><p class="s">the metric that matters</p></div>
+    <div class="kpi"><p class="l">Marketing spend</p><p class="v sm">${usd(T.spend)}</p><p class="s">selected slice</p></div>
+    <div class="kpi"><p class="l">Signups</p><p class="v sm">${num(T.signups)}</p><p class="s">trials generated</p></div>
+    <div class="kpi"><p class="l">Cost per signup</p><p class="v sm">$${T.cps.toFixed(1)}</p><p class="s">what a lead costs us</p></div>
+    <div class="kpi"><p class="l">Cost per paid customer</p><p class="v" style="color:var(--sw)">${T.conv?money(T.cpa):'—'}</p><p class="s">the metric that matters</p></div>
   </div>
   <div class="panel" style="margin-top:12px">
     <div class="head">
-      <h3>Paid &amp; organic reports${acqMode==='stages'&&acqRow!=='adgroup'?'<span class="pillw">click a row to drill down</span>':''}</h3>
-      <span>
-        <button class="tgl${acqMode==='stages'?' on':''}" data-mode="stages">Stages</button><button class="tgl${acqMode==='funnel'?' on':''}" data-mode="funnel">Funnel quality</button><button class="tgl${acqMode==='cost'?' on':''}" data-mode="cost">Cost</button>
-      </span>
+      <h3>Paid &amp; organic reports${drillable?'<span class="pillw">click a row to drill down</span>':''}</h3>
+      <span><button class="tgl${acqMode==='stages'?' on':''}" data-mode="stages">Stages</button><button class="tgl${acqMode==='funnel'?' on':''}" data-mode="funnel">Funnel quality</button><button class="tgl${acqMode==='cost'?' on':''}" data-mode="cost">Cost</button></span>
     </div>
-    ${acqMode==='stages'?`<div style="display:flex;gap:8px;margin:-4px 0 14px;flex-wrap:wrap">
-      <span><button class="tgl${!acqJourney?' on':''}" data-j="0">Now</button><button class="tgl${acqJourney?' on':''}" data-j="1">Journey</button></span>
-      <span><button class="tgl${acqRow==='campaign'?' on':''}" data-r="campaign">Campaigns</button><button class="tgl${acqRow==='adgroup'?' on':''}" data-r="adgroup">Ad groups</button></span>
-    </div>`:''}
+    <div class="ctrlbar">
+      ${acqMode==='stages'?`<span><button class="tgl${!acqJourney?' on':''}" data-j="0">Now</button><button class="tgl${acqJourney?' on':''}" data-j="1">Journey</button></span>`:''}
+      <label class="cl">Rows</label>
+      <select id="acq-dim">${ROWDIMS.map(([k,l])=>`<option value="${k}"${acqRow===k?' selected':''}>${l}</option>`).join('')}</select>
+      <label class="cl">Sort</label>
+      <select id="acq-sort">${Object.entries(SORTS).map(([k,v])=>`<option value="${k}"${acqSort.key===k?' selected':''}>${v[0]}</option>`).join('')}</select>
+      <button class="tgl on" id="acq-dir">${acqSort.dir<0?'High → low':'Low → high'}</button>
+      <button class="chtog" id="acq-chart-tog">${acqChart?'▾ Hide chart':'▸ Show chart'}</button>
+    </div>
+    ${acqChart?`<div class="chartwrap"><div class="head" style="margin-bottom:8px"><h3>${sortLabel} — ranked</h3><span>follows the table: same rows, same sort, same filters</span></div><div class="chart-box" style="height:${Math.max(180, chartRows.length*26)}px"><canvas id="c-rank"></canvas></div></div>`:''}
     <table class="dtable"><thead>${head}</thead><tbody id="acq-body">${rows}</tbody></table>
     ${legend}
   </div>
   <div class="row2">
-    <div class="panel"><div class="head"><h3>Activation rate by channel</h3><span>green = beats the ${a.totals.actR.toFixed(0)}% average</span></div>${actRows}</div>
+    <div class="panel"><div class="head"><h3>Activation rate by channel</h3><span>green = beats our ${T.actR.toFixed(0)}% average</span></div>${actRows}</div>
     <div class="panel"><h3>Monthly spend &amp; cost per signup</h3><div class="chart-box"><canvas id="c-acq"></canvas></div></div>
   </div>
   <div class="insight">${bulb}
-    <p><b>Volume at the top says nothing about revenue at the bottom.</b> Switch to <b>Journey</b> and follow a campaign across the stages — some pour in signups that die at stage 2, others carry a thin stream all the way to Closed Won. Judge acquisition on how far its trials <i>travel</i>, not how many arrive. Then move budget to the campaigns whose leads survive.</p></div>
-  <p class="note">Stages, activation, PQL and pipeline come from trial records, so they respond to every filter. Spend is booked at campaign level and allocated to the filtered slice in proportion to signups.</p>`;
+    <p><b>Volume at the top tells us nothing about revenue at the bottom.</b> Our campaigns look almost identical at install — because whether someone installs depends on their IT department, not on the ad they clicked. The difference shows up further down, where intent starts to cost effort: ${T.cvr.toFixed(1)}% of our trials convert on average, but the spread across ad groups is several times that. Judge acquisition on cost per paid customer, not cost per signup — and cut the ad groups marked &#9660;.</p></div>
+  <p class="note">Every number here recomputes from the filters above. Spend is each trial's own acquisition cost, so it follows the filters too.</p>`;
 
+  // ---- wiring
   const body=document.getElementById('acq-body');
-  body.querySelectorAll('tr[data-ch]').forEach(tr=> tr.onclick=()=>{ const c=tr.dataset.ch; acqOpen={ch:acqOpen.ch===c?null:c,cmp:null}; render(); });
-  body.querySelectorAll('tr[data-cmp]').forEach(tr=> tr.onclick=e=>{ e.stopPropagation(); const c=tr.dataset.cmp; acqOpen.cmp=acqOpen.cmp===c?null:c; render(); });
+  if(drillable){
+    body.querySelectorAll('tr[data-ch]').forEach(tr=> tr.onclick=()=>{ const c=tr.dataset.ch; acqOpen={ch:acqOpen.ch===c?null:c,cmp:null}; render(); });
+    body.querySelectorAll('tr[data-cmp]').forEach(tr=> tr.onclick=e=>{ e.stopPropagation(); const c=tr.dataset.cmp; acqOpen.cmp=acqOpen.cmp===c?null:c; render(); });
+  }
   view.querySelectorAll('.tgl').forEach(b=> b.onclick=()=>{
     if(b.dataset.mode) acqMode=b.dataset.mode;
-    if(b.dataset.j!=null) acqJourney = b.dataset.j==='1';
-    if(b.dataset.r) acqRow=b.dataset.r;
-    render();
-  });
+    if(b.dataset.j!=null) acqJourney=b.dataset.j==='1';
+    if(b.id==='acq-dir') acqSort.dir*=-1;
+    render(); });
+  view.querySelectorAll('th.srt').forEach(th=> th.onclick=()=>{
+    const k=th.dataset.sort;
+    if(acqSort.key===k) acqSort.dir*=-1; else { acqSort.key=k; acqSort.dir=-1; }
+    render(); });
+  document.getElementById('acq-dim').onchange=e=>{ acqRow=e.target.value; acqOpen={ch:null,cmp:null}; render(); };
+  document.getElementById('acq-sort').onchange=e=>{ acqSort.key=e.target.value; render(); };
+  document.getElementById('acq-chart-tog').onclick=()=>{ acqChart=!acqChart; render(); };
+
+  if(acqChart){
+    const lbls=chartRows.map(r=> DIM?(DIMLABEL[r.name]||r.name) : (r.name || CH_LABELS[r.channel] || r.channel));
+    const vals=chartRows.map(r=>{ const v=getv(r); return (v===Infinity||!isFinite(v))?0:v; });
+    const bench = acqSort.key==='cvr'?T.cvr : acqSort.key==='actR'?T.actR : acqSort.key==='pqlR'?T.pqlR
+                : acqSort.key==='cpa'?T.cpa : null;
+    const isPct=['cvr','actR','pqlR'].includes(acqSort.key);
+    const isMoney=['spend','cpa','wonAcv'].includes(acqSort.key);
+    const good=v=> bench==null?'#FF6200' : (acqSort.key==='cpa' ? (v<=bench?'#12A374':'#D64542') : (v>=bench?'#12A374':'#D64542'));
+    mkChart('c-rank',{type:'bar',data:{labels:lbls,datasets:[{data:vals,
+        backgroundColor:vals.map(good), borderRadius:3, maxBarThickness:16}]},
+      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{
+          const v=c.parsed.x; return sortLabel+': '+(isPct? v.toFixed(1)+'%' : isMoney? '$'+Math.round(v).toLocaleString() : Math.round(v).toLocaleString());}}}},
+        scales:{x:{grid:{color:'#EEF1F5'},border:{display:false},
+            ticks:{font:{size:10},color:'#8B95A6',callback:v=>isPct?v+'%':isMoney?'$'+(v>=1000?Math.round(v/1000)+'k':v):v}},
+          y:{grid:{display:false},border:{display:false},ticks:{font:{size:11},color:'#586475'}}}},
+      plugins: bench!=null?[{id:'bench',afterDatasetsDraw(ch){
+        const {ctx,chartArea:{top,bottom},scales:{x}}=ch;
+        const px=x.getPixelForValue(bench);
+        ctx.save(); ctx.strokeStyle='#232323'; ctx.setLineDash([4,3]); ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.moveTo(px,top); ctx.lineTo(px,bottom); ctx.stroke();
+        ctx.setLineDash([]); ctx.fillStyle='#232323'; ctx.font='600 9.5px Inter'; ctx.textAlign='center';
+        ctx.fillText('our average', px, top-4); ctx.restore();
+      }}]:[]});
+  }
 
   const lbl=a.trend.labels.map(fmtMonth);
   mkChart('c-acq',{data:{labels:lbl,datasets:[{type:'bar',label:'Spend',data:a.trend.spend,backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:18,yAxisID:'y'},{type:'line',label:'$/signup',data:a.trend.cps,borderColor:'#232323',backgroundColor:'#232323',borderWidth:2,pointRadius:0,tension:.3,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}}},scales:{y:{position:'left',ticks:{callback:v=>'$'+Math.round(v/1000)+'k',font:{size:10},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},y1:{position:'right',min:0,ticks:{callback:v=>'$'+v,font:{size:10},color:'#8B95A6'},grid:{display:false},border:{display:false}},x:{ticks:{font:{size:9},color:'#8B95A6',maxRotation:0,autoSkip:true,maxTicksLimit:8},grid:{display:false},border:{display:false}}}}});
@@ -845,7 +986,7 @@ function renderEng(view,f){
     <p class="note">The shaded band is the first 72 hours — where the trial is effectively decided. Converted trials are still ${R.conv[2].toFixed(0)}% active on day 3; trials that never convert are already down to ${R.nonconv[2].toFixed(0)}%.</p>
   </div>
   <div class="insight">${bulb}
-    <p><b>The nurture is talking to an empty room.</b> ${R.dead.toFixed(0)}% of trials never log in at all after signing up, and by day ${R.emails.trial_ending||12} — when the "trial ending" email fires — only <b>${aliveAtEnding.toFixed(0)}%</b> are still active. Open rate hides this: opening an email is not the same as returning to the product. The trial runs 14 days, but self-hosted setup depends on IT approval cycles measured in weeks. <b>Front-load the help, or start the clock at first successful install rather than at signup.</b></p></div>
+    <p><b>Our nurture is talking to an empty room.</b> ${R.dead.toFixed(0)}% of trials never log in at all after signing up, and by day ${R.emails.trial_ending||12} — when the "trial ending" email fires — only <b>${aliveAtEnding.toFixed(0)}%</b> are still active. Open rate hides this from us: opening an email isn't the same as coming back to the product. The trial runs 14 days, but self-hosted setup depends on IT approval cycles measured in weeks. <b>We should front-load the help, or start the clock at first successful install rather than at signup.</b></p></div>
   <div class="row2">
     <div class="panel"><div class="head"><h3>Conversion by engagement score</h3><span>higher score → more likely to buy</span></div><div class="chart-box"><canvas id="c-eng"></canvas></div></div>
     <div class="panel"><div class="head"><h3>Nurture email performance</h3><span>by sequence step</span></div>${nurtureHTML}</div>
@@ -853,7 +994,7 @@ function renderEng(view,f){
   <div class="row2">
     <div class="panel"><div class="head"><h3>Feature usage (activated trials)</h3><span>avg per trial</span></div>${featHTML}</div>
     <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
-      <p><b>Engagement is the strongest buy signal.</b> Trials scoring 61–80 convert around 44% vs ~3% at the bottom — so the game is moving trials up the engagement curve. The extension-offer email earns the highest open rate, and trials that click any nurture email convert ${a.clickConv?('at '+a.clickConv[1].toFixed(0)+'% vs '+a.clickConv[0].toFixed(0)+'%'):'more'}. Lead with wait-time analysis as the activation "aha".</p></div></div>
+      <p><b>Engagement is our strongest buy signal.</b> Trials scoring 61–80 convert around 44% vs ~3% at the bottom — so the game is moving trials up the engagement curve. The extension-offer email earns the highest open rate, and trials that click any nurture email convert ${a.clickConv?('at '+a.clickConv[1].toFixed(0)+'% vs '+a.clickConv[0].toFixed(0)+'%'):'more'}. We should lead with wait-time analysis as the activation "aha".</p></div></div>
   </div>`;
   const rl=Array.from({length:R.days},(_,i)=>'Day '+(i+1));
   const endDay=R.emails.trial_ending||12;
@@ -923,7 +1064,7 @@ function renderExp(view,f){
     </div>
   </div>
   <div class="insight">${bulb}
-    <p><b>Roadmap signal.</b> The benefit-led page (B) lifts conversion ${a.ab.lift>=0?'+':''}${a.ab.lift.toFixed(0)}% and also improves activation and PQL rate, so the win compounds up-funnel. Trial extensions and sales assist both lift conversion for high-intent trials — strong candidates to formalize into the experimentation roadmap with proper significance testing.</p></div>`;
+    <p><b>Our roadmap signal.</b> The benefit-led page (B) lifts conversion ${a.ab.lift>=0?'+':''}${a.ab.lift.toFixed(0)}% and also improves activation and PQL rate, so the win compounds up-funnel. Trial extensions and sales assist both lift conversion for high-intent trials — both are strong candidates for our experimentation roadmap, with proper significance testing.</p></div>`;
   mkChart('c-ab',{type:'bar',data:{labels:['Activation','PQL','Conversion'],datasets:[{label:'A — feature-led',data:[A.act,A.pql,A.conv],backgroundColor:'#8B95A6',borderRadius:3,maxBarThickness:30},{label:'B — benefit-led',data:[B.act,B.pql,B.conv],backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:30}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'%'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:11},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
 }
 
@@ -950,7 +1091,7 @@ function renderPipe(view,f){
       <div class="head" style="margin:18px 0 12px"><h3>Win rate by region</h3></div>${wrRows}</div>
   </div>
   <div class="insight">${bulb}
-    <p><b>Where sales assist pays off.</b> Sales-touched opportunities win ${a.kpis.winrate.toFixed(0)}% of the time at ${usd(a.kpis.avg_acv)} average ACV. Enterprise-heavy products carry the biggest booked ACV, so prioritize timely SDR follow-up on their PQLs. Define the PQL→opportunity handoff so high-intent trials reach sales while the evaluation is still warm.</p></div>
+    <p><b>Where our sales assist pays off.</b> Sales-touched opportunities win ${a.kpis.winrate.toFixed(0)}% of the time at ${usd(a.kpis.avg_acv)} average ACV. Enterprise-heavy products carry the biggest booked ACV, so we should prioritise timely SDR follow-up on their PQLs. We need to define the PQL→opportunity handoff so high-intent trials reach sales while the evaluation is still warm.</p></div>
   <p class="note">Pipeline responds to the Product and Region filters; Deployment doesn't apply to CRM opportunities.</p>`;
 }
 
@@ -1146,7 +1287,7 @@ function renderInsights(view,f){
         <p class="note">The cliff is between one and two. Getting a trial to add a second database is the single highest-leverage act in the funnel.</p></div>
       <div class="panel"><div class="head"><h3>Who can actually connect a database</h3><span>% reaching DB-connect</span></div>
         ${persBars}
-        <p class="note">The step needs a monitoring user and a firewall port. DBAs have those rights. Developers have to go and ask.</p></div>
+        <p class="note">That step needs a monitoring user and an open port. DBAs have those rights. Developers have to go and ask someone.</p></div>
     </div>
     ${exps.map(x=>`<div class="ins"><div class="top"><div class="rank">${x.r}</div><h4>${x.t}</h4></div>
       <p class="ev">${x.ev}</p>
@@ -1281,6 +1422,7 @@ function cEvents(f){
   return {n:F.length, funnel, stuck, errs, failed:failed.length, recovered, recoverRate, avgAttempts};
 }
 
+let mockOpen=false;
 function renderEvents(view,f){
   const a=cEvents(f);
   if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Product events</p><p>No event data in this slice.</p></div>'; return; }
@@ -1335,7 +1477,7 @@ function renderEvents(view,f){
     <div class="head"><h3>Setup event funnel<span class="pillw">what they actually clicked</span></h3>
       <span>step % · trials lost</span></div>
     ${frows}
-    <p class="note">This is the level a product-analytics tool (Pendo, Amplitude) would give you. The trial funnel says <i>where</i> people stop. This says <i>what they were doing when they stopped</i> — which is the difference between knowing there's a problem and being able to fix it.</p>
+    <p class="note">This is the level Pendo or Amplitude would give us. Our trial funnel tells us <i>where</i> people stop. This tells us <i>what they were doing when they stopped</i> — the difference between knowing we have a problem and being able to fix it.</p>
   </div>
 
   ${a.errs.length?`<div class="panel" style="margin-top:12px;border-color:rgba(214,69,66,.4)">
@@ -1343,18 +1485,47 @@ function renderEvents(view,f){
       <span>${num(a.failed)} trials · each error needs a different email</span></div>
     ${erows}
     <div class="warnbox" style="margin-top:14px">
-      <b>This is the segmentation that doesn't exist today.</b> Right now every one of these ${num(a.failed)} people gets the same generic "finish your setup" email. A permissions error and a firewall error are not the same problem — and one of them is solved by a single line of SQL.
+      <b>This is the segmentation we don't have today.</b> Right now every one of these ${num(a.failed)} people gets the same generic "finish your setup" email from us. A permissions error and a firewall error aren't the same problem — and one of them we solve with a single line of SQL.
     </div>
   </div>`:''}
 
   <div class="panel" style="margin-top:12px">
-    <div class="head"><h3>Every stuck trial, and what to send them</h3><span>sorted by size</span></div>
-    <p class="note" style="margin:0 0 14px">${num(a.n - (a.funnel[9]?a.funnel[9].v:0))} trials in this slice never reached activation. They are not one audience. They are ${a.stuck.length} different audiences, each stuck for a different reason.</p>
+    <div class="head"><h3>Our proposed fix — the two questions we'd ask at signup</h3>
+      <span><button class="chtog" id="mock-tog" style="margin:0">${mockOpen?'▾ Hide':'▸ Show'} the screen</button></span></div>
+    <p class="note" style="margin:0 0 12px">We ask these <b>after</b> signup, on the download page — so they cost us no conversions. Two optional questions, framed as help rather than a form.</p>
+    ${mockOpen?`<div class="mock">
+      <div class="bar"><span class="dot3"></span><span class="dot3"></span><span class="dot3"></span>
+        <span class="url">solarwinds.com/dpa/trial/download</span></div>
+      <div class="inner">
+        <h5>Your download is ready.</h5>
+        <p class="lead">Two quick questions so we send you the right setup guide — not a generic one.</p>
+        <p class="qq">Which database will you monitor?</p>
+        <div class="opts"><span class="opt">SQL Server</span><span class="opt hl">Oracle</span><span class="opt">MySQL</span><span class="opt">PostgreSQL</span><span class="opt">Something else</span></div>
+        <p class="qq">Where does that database run?</p>
+        <div class="opts"><span class="opt">Same network as the DPA server</span><span class="opt hl">Behind a firewall / different network</span><span class="opt">Not sure yet</span></div>
+        <span class="btn">Download DPA</span><span class="skip">Skip for now</span>
+      </div></div>
+    <div class="row2" style="margin-top:12px">
+      <div class="panel" style="border-color:rgba(255,98,0,.3);background:var(--sw-tint)">
+        <h3>What the first answer buys us</h3>
+        <p class="ev" style="margin:0">If their platform isn't supported, we tell them <b>now</b> — not after they've burned a week. That's the ${num(a.stuck.find(x=>x.s===5)?a.stuck.find(x=>x.s===5).n:0)} trials currently discovering it the hard way.</p></div>
+      <div class="panel" style="border-color:rgba(255,98,0,.3);background:var(--sw-tint)">
+        <h3>What the second answer buys us</h3>
+        <p class="ev" style="margin:0">"Behind a firewall" tells us they'll need a network change — weeks of it. We send the pre-written request for their network team on <b>day one</b>, and stop the trial clock before it beats them.</p></div>
+    </div>`:''}
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Every stuck trial, and what we should send them</h3><span>sorted by size</span></div>
+    <p class="note" style="margin:0 0 14px">${num(a.n - (a.funnel[9]?a.funnel[9].v:0))} trials in this slice never reached activation. They're not one audience. They're ${a.stuck.length} different audiences, each stuck for a different reason.</p>
   </div>
   ${srows}
 
   <div class="insight">${bulb}
-    <p><b>The recovery number is the argument.</b> ${num(a.recovered)} trials hit a connection error and <i>still</i> got through — they persisted, retried, and made it. ${num(a.failed)} hit the same errors and gave up. The difference between those two groups is not intent. It's whether anyone helped them at the moment they were stuck. That help costs one email each, and we already know exactly which email to send.</p></div>`;
+    <p><b>The recovery number is our argument.</b> ${num(a.recovered)} trials hit a connection error and <i>still</i> got through — they persisted, retried, and made it. ${num(a.failed)} hit the same errors and gave up. The difference between those two groups isn't intent. It's whether anyone helped them at the moment they were stuck. That help costs us one email each, and we already know exactly which email to send.</p></div>`;
+
+  const mt=document.getElementById('mock-tog');
+  if(mt) mt.onclick=()=>{ mockOpen=!mockOpen; render(); };
 }
 
 // ---------------- router ----------------
