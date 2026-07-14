@@ -254,7 +254,7 @@ const FB = {
   pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
 };
 
-const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Pipeline','Insights'];
+const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Retention','Pipeline','Insights'];
 let TRIALS=null, PUMAP=null, CHANNEL=null, CAMPAIGN=null, CRM=null, NURTURE=null, SB=null;
 let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
@@ -339,6 +339,8 @@ async function loadSnapshot(){
         sales_assisted:!!T.sales_assisted[i],trial_extended:!!T.trial_extended[i],
         cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null,
         ad_group:T.ad_group?(D.ad_group?dec('ad_group',i):T.ad_group[i]):null,
+        months_retained:T.months_retained?T.months_retained[i]:-1,
+        still_active:T.still_active?!!T.still_active[i]:false,
         nsent:T.nsent?T.nsent[i]:0, nopen:T.nopen?T.nopen[i]:0, nclick:T.nclick?T.nclick[i]:0,
         setup_stage:T.setup_stage?T.setup_stage[i]:null,
         setup_err:T.setup_err?T.setup_err[i]:-1,
@@ -1710,6 +1712,125 @@ function renderEvents(view,f){
   if(mt) mt.onclick=()=>{ mockOpen=!mockOpen; render(); };
 }
 
+// ---------------- Retention (post-purchase cohorts) ----------------
+function cRetention(f){
+  if(!HAVE() || TRIALS[0].months_retained==null) return null;
+  const F=filt(f).filter(r=>r.converted && r.months_retained>=0);
+  if(!F.length) return null;
+
+  // won-date cohort = signup + days to convert
+  const cohortOf=r=>{
+    const d=new Date(r.signup_date);
+    d.setDate(d.getDate() + (+r.time_to_convert_days||14));
+    return d.toISOString().slice(0,7);
+  };
+  const byC={};
+  F.forEach(r=>{ const c=cohortOf(r); (byC[c]=byC[c]||[]).push(r); });
+  const END=new Date('2026-07-14');
+  const cohorts=Object.keys(byC).sort().map(c=>{
+    const d=byC[c];
+    const start=new Date(c+'-01T00:00:00');
+    const maxM=Math.floor((END-start)/(1000*60*60*24*30.44));
+    const vals=[];
+    for(let m=0;m<=12;m++){
+      if(m>maxM){ vals.push(null); continue; }
+      vals.push(r1(pct(d.filter(x=>x.months_retained>=m).length, d.length)));
+    }
+    return {c, n:d.length, vals};
+  }).filter(x=>x.n>=15);
+
+  // headline
+  const avgLife = mean(F.map(r=>r.months_retained));
+  const alive = F.filter(r=>r.still_active).length;
+  const mature = F.filter(r=>{
+    const d=new Date(r.signup_date); d.setDate(d.getDate()+(+r.time_to_convert_days||14));
+    return (END-d)/(1000*60*60*24*30.44) >= 12;
+  });
+  const ret12 = mature.length? pct(mature.filter(r=>r.months_retained>=12).length, mature.length) : 0;
+  const monthlyChurn = avgLife? 100/avgLife : 0;
+
+  // does trial engagement predict who stays?
+  const bands=[['Low (<50)',0,50],['Medium (50-70)',50,70],['High (70-85)',70,85],['Very high (85+)',85,101]];
+  const byEng=bands.map(([lab,lo,hi])=>{
+    const d=F.filter(r=>{ const e=+PUMAP[r.trial_id]?.engagement_score; return e>=lo && e<hi; });
+    const dm=d.filter(r=>{ const x=new Date(r.signup_date); x.setDate(x.getDate()+(+r.time_to_convert_days||14));
+      return (END-x)/(1000*60*60*24*30.44) >= 12; });
+    return {lab, n:d.length, life: d.length? mean(d.map(r=>r.months_retained)) : 0,
+      r12: dm.length? pct(dm.filter(r=>r.months_retained>=12).length, dm.length) : 0};
+  }).filter(x=>x.n>0);
+
+  // deployment: switching cost
+  const byDep=['self_hosted','saas'].map(dt=>{
+    const d=F.filter(r=>r.deployment_type===dt);
+    return {dt, n:d.length, life: d.length? mean(d.map(r=>r.months_retained)) : 0,
+      acv: d.length? mean(d.map(r=>+r.acv_usd||0)) : 0};
+  }).filter(x=>x.n>0);
+
+  return {n:F.length, cohorts, avgLife, alive, ret12, monthlyChurn, byEng, byDep};
+}
+
+function renderRetention(view,f){
+  const a=cRetention(f);
+  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Retention</p><p>No customers in this slice.</p></div>'; return; }
+  const num=x=>Math.round(x).toLocaleString();
+  const M=x=>{x=+x||0; return x>=1e6?'$'+(x/1e6).toFixed(1)+'M':x>=1e3?'$'+Math.round(x/1e3)+'K':'$'+Math.round(x);};
+
+  const heat=v=>{ if(v==null) return 'background:#FAFBFC;color:#C3CAD4';
+    const t=Math.max(0,Math.min(v/100,1));
+    return `background:rgba(18,163,116,${(0.08+t*0.72).toFixed(2)});color:${t>0.5?'#fff':'var(--text)'}`; };
+
+  const rows=a.cohorts.map(c=>`<tr>
+    <td><b>${fmtMonth(c.c)}</b></td><td class="num">${c.n}</td>
+    ${c.vals.map((v,i)=>`<td class="stg" style="${heat(v)}">${v==null?'·':`<span class="n">${v.toFixed(0)}%</span>`}</td>`).join('')}
+  </tr>`).join('');
+
+  const engRows=a.byEng.map(e=>`<div class="frow">
+    <span class="fname" style="width:126px">${e.lab}</span>
+    <div class="ftrack"><div class="ffill" style="width:${Math.max(e.r12,2)}%;background:${e.r12>=a.ret12?'#12A374':'#D64542'}"></div></div>
+    <span class="fnum">${e.r12.toFixed(0)}%</span><span class="fstep">${num(e.n)}</span></div>`).join('');
+
+  const worst=a.byEng[0], best=a.byEng[a.byEng.length-1];
+  const sh=a.byDep.find(d=>d.dt==='self_hosted'), sa=a.byDep.find(d=>d.dt==='saas');
+
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Customers</p><p class="v sm">${num(a.n)}</p><p class="s">in this slice</p></div>
+    <div class="kpi"><p class="l">Avg customer lifetime</p><p class="v sm">${a.avgLife.toFixed(1)} mo</p><p class="s">before they churn</p></div>
+    <div class="kpi"><p class="l">Still paying at 12 months</p><p class="v" style="color:var(--sw)">${a.ret12.toFixed(0)}%</p><p class="s">of mature cohorts</p></div>
+    <div class="kpi"><p class="l">Monthly churn</p><p class="v sm" style="color:var(--red)">${a.monthlyChurn.toFixed(1)}%</p><p class="s">implied</p></div>
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Cohort retention<span class="pillw">of the customers we won in month X, how many are still paying?</span></h3>
+      <span>months since they bought</span></div>
+    <table class="dtable"><thead><tr><th>Won in</th><th class="num">Customers</th>
+      ${Array.from({length:13},(_,i)=>`<th class="num ctr">M${i}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody></table>
+    <p class="note">Read a row left to right: that cohort decaying over time. Read a column down: whether newer cohorts retain better than older ones. Blank cells are months that haven't happened yet.</p>
+  </div>
+
+  <div class="row2">
+    <div class="panel"><div class="head"><h3>Does trial engagement predict who stays?<span class="pillw">it does</span></h3><span>% still paying at 12 months</span></div>
+      ${engRows}
+      <p class="note">Customers who were barely engaged during their trial retain at <b>${worst?worst.r12.toFixed(0):'—'}%</b>. The most engaged retain at <b>${best?best.r12.toFixed(0):'—'}%</b>. How they behaved <i>before</i> they paid tells us how long they'll stay <i>after</i>.</p>
+    </div>
+    <div class="panel"><div class="head"><h3>Self-hosted is our stickiest customer</h3><span>avg months retained</span></div>
+      ${a.byDep.map(d=>`<div class="frow">
+        <span class="fname" style="width:106px">${d.dt==='self_hosted'?'Self-hosted':'SaaS'}</span>
+        <div class="ftrack"><div class="ffill" style="width:${Math.max(d.life/Math.max(...a.byDep.map(x=>x.life),1)*100,3)}%;background:${d.dt==='self_hosted'?'#12A374':'#8B95A6'}"></div></div>
+        <span class="fnum">${d.life.toFixed(1)} mo</span></div>`).join('')}
+      <div class="warnbox" style="margin-top:16px;background:rgba(18,163,116,.08);border-color:rgba(18,163,116,.28)">
+        <b>The segment we're worst at winning is the one we're best at keeping.</b> Self-hosted customers stay ${sh&&sa?(sh.life/sa.life).toFixed(1):'—'}× longer — once the software is inside their network, ripping it out is painful. So the setup friction isn't just costing us trials. It's costing us our <i>best</i> customers.
+      </div>
+    </div>
+  </div>
+
+  <div class="insight">${bulb}
+    <p><b>The uncomfortable question this raises.</b> If we push weak trials over the line, we don't win customers — we win churn. Trials that converted with low engagement retain at ${worst?worst.r12.toFixed(0):'—'}% against ${best?best.r12.toFixed(0):'—'}% for the most engaged. So "increase conversion" is the wrong goal on its own. The goal is <b>get trials genuinely using the product, then convert them</b> — which is the same conclusion the funnel gave us, arriving from the opposite end.</p></div>
+
+  <p class="note"><b>On this data:</b> our dataset ends at the sale, so post-purchase retention is <b>modelled, not observed</b>. Churn is driven by fields we do have — trial engagement, databases connected, company size and deployment. In a real role this would come from the CRM's subscription and renewal records, and it's the first thing I'd ask RevOps for. The pattern is a hypothesis to test, not a finding.</p>`;
+}
+
 // ---------------- router ----------------
 function render(){
   clearCharts();
@@ -1725,6 +1846,7 @@ function render(){
     if(active==='Acquisition & CAC') return renderAcq(view,f);
     if(active==='Engagement & nurture') return renderEng(view,f);
     if(active==='Experiments') return renderExp(view,f);
+    if(active==='Retention') return renderRetention(view,f);
     if(active==='Pipeline') return renderPipe(view,f);
     if(active==='Insights') return renderInsights(view,f);
   }catch(e){
