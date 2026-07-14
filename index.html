@@ -566,6 +566,12 @@ function cEng(f){
   const F=filt(f);
   const eng=F.map(r=>+PUMAP[r.trial_id]?.engagement_score).filter(x=>x===x);
   const actd=F.filter(r=>r.activated);
+  // the aha moment: how many databases have they wired up?
+  const dbCurve=[0,1,2,3,4,5].map(k=>{
+    const d = k<5 ? F.filter(r=>(+PUMAP[r.trial_id]?.instances_monitored||0)===k)
+                  : F.filter(r=>(+PUMAP[r.trial_id]?.instances_monitored||0)>=5);
+    return {k, n:d.length, conv: d.length? r1(pct(d.filter(r=>r.converted).length,d.length)) : 0};
+  });
   const B=[['0',-1,0],['1-20',0,20],['21-40',20,40],['41-60',40,60],['61-80',60,80],['81-100',80,100]];
   const buckets=B.map(([lab,lo,hi])=>{ const d=F.filter(r=>{const s=+PUMAP[r.trial_id]?.engagement_score; return s>lo&&s<=hi;}); return [lab,d.length,r1(pct(d.filter(r=>r.converted).length,d.length))]; });
   const feat=k=> r1(mean(actd.map(r=>+PUMAP[r.trial_id]?.[k]||0)));
@@ -587,7 +593,7 @@ function cEng(f){
   const cy=F.filter(r=>(r.nclick||0)>0), cn=F.filter(r=>!(r.nclick||0));
   const clickConv=[ cn.length? r1(pct(cn.filter(r=>r.converted).length,cn.length)) : 0,
                     cy.length? r1(pct(cy.filter(r=>r.converted).length,cy.length)) : 0 ];
-  return {kpis:{eng:r1(mean(eng)),open,click,adopt:features.adoption},buckets,nurture,features,clickConv};
+  return {kpis:{eng:r1(mean(eng)),open,click,adopt:features.adoption},buckets,dbCurve,nurture,features,clickConv};
 }
 
 // ---------------- compute (Trial retention) ----------------
@@ -953,7 +959,7 @@ function renderAcq(view,f){
 
 // ---------------- Engagement & nurture ----------------
 function renderEng(view,f){
-
+  const num=x=>Math.round(x).toLocaleString();
   const a=cEng(f);
   let nurtureHTML;
   if(a.nurture){
@@ -971,7 +977,7 @@ function renderEng(view,f){
     <div class="kpi"><p class="l">Never returned</p><p class="v" style="color:var(--red)">${R.dead.toFixed(1)}%</p><p class="s">signed up, never logged in</p></div>
     <div class="kpi"><p class="l">Still active, day 14</p><p class="v sm">${R.all[13].toFixed(1)}%</p><p class="s">last day of trial</p></div>
     <div class="kpi"><p class="l">Alive when "trial ending" sends</p><p class="v" style="color:var(--red)">${aliveAtEnding.toFixed(1)}%</p><p class="s">day ${R.emails.trial_ending||12}</p></div>
-    <div class="kpi"><p class="l">Avg engagement score</p><p class="v" style="color:var(--sw)">${a.kpis.eng.toFixed(1)}</p><p class="s">0–100, all trials</p></div>
+    <div class="kpi"><p class="l">Stuck at one database</p><p class="v" style="color:var(--red)">${(a.dbCurve[1]&&a.dbCurve[1].n)?num(a.dbCurve[1].n):'—'}</p><p class="s">converting at just ${(a.dbCurve[1])?a.dbCurve[1].conv.toFixed(1):'—'}%</p></div>
     <div class="kpi"><p class="l">Email open rate</p><p class="v sm">${a.kpis.open==null?'…':a.kpis.open.toFixed(1)+'%'}</p><p class="s">across nurture</p></div>
   </div>
   <div class="panel" style="margin-top:12px">
@@ -992,13 +998,15 @@ function renderEng(view,f){
   <div class="insight">${bulb}
     <p><b>Our nurture is talking to an empty room.</b> ${R.dead.toFixed(0)}% of trials never log in at all after signing up, and by day ${R.emails.trial_ending||12} — when the "trial ending" email fires — only <b>${aliveAtEnding.toFixed(0)}%</b> are still active. Open rate hides this from us: opening an email isn't the same as coming back to the product. The trial runs 14 days, but self-hosted setup depends on IT approval cycles measured in weeks. <b>We should front-load the help, or start the clock at first successful install rather than at signup.</b></p></div>
   <div class="row2">
-    <div class="panel"><div class="head"><h3>Conversion by engagement score</h3><span>higher score → more likely to buy</span></div><div class="chart-box"><canvas id="c-eng"></canvas></div></div>
+    <div class="panel"><div class="head"><h3>The aha moment: a second database<span class="pillw">our sharpest lever</span></h3><span>conversion by databases connected</span></div>
+      <div class="chart-box"><canvas id="c-eng"></canvas></div>
+      <p class="note">The cliff sits between one database and two. Trials monitoring a single database are still <i>testing</i> us. The moment they wire up a second, they've started using us for real work — and conversion steps up sharply. <b>${(a.dbCurve[1]&&a.dbCurve[1].n)?num(a.dbCurve[1].n):'—'} trials are parked at one database.</b> Moving them is the highest-leverage act in the funnel, and it's an in-app nudge, not a campaign.</p></div>
     <div class="panel"><div class="head"><h3>Nurture email performance</h3><span>by sequence step</span></div>${nurtureHTML}</div>
   </div>
   <div class="row2">
     <div class="panel"><div class="head"><h3>Feature usage (activated trials)</h3><span>avg per trial</span></div>${featHTML}</div>
     <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
-      <p><b>Engagement is our strongest buy signal.</b> Trials in the top band convert around ${a.buckets.length?a.buckets[a.buckets.length-1][2].toFixed(0):'—'}% against near zero at the bottom — so our job is moving trials up the curve, not sending more email. Note the trap: trials that click our nurture convert at ${a.clickConv?a.clickConv[1].toFixed(1):'—'}% vs ${a.clickConv?a.clickConv[0].toFixed(1):'—'}%, but that is <b>correlation, not proof</b> — engaged people both click and buy. The one email that genuinely earns its place is the extension offer, and it works because it removes a blocker rather than adding information.</p></div></div>
+      <p><b>The second database is our lever.</b> Trials monitoring one database convert at ${a.dbCurve[1]?a.dbCurve[1].conv.toFixed(1):'—'}%. At two, that jumps to ${a.dbCurve[2]?a.dbCurve[2].conv.toFixed(1):'—'}% — the sharpest step change anywhere in our funnel. One database means they're still testing us; two means they've started doing real work. And the nurture data tells us email won't get them there: our lowest open rate (${a.nurture&&a.nurture[1]?a.nurture[1][2].toFixed(0):'—'}%) is on the setup-help email, sent to exactly the people who are stuck. The ones who most need us are the least likely to open. This is an in-app nudge, not a campaign.</p></div></div>
   </div>`;
   const rl=Array.from({length:R.days},(_,i)=>'Day '+(i+1));
   const endDay=R.emails.trial_ending||12;
@@ -1048,7 +1056,29 @@ function renderEng(view,f){
         ctx.restore();
       }}]});
 
-  mkChart('c-eng',{type:'bar',data:{labels:a.buckets.map(b=>b[0]),datasets:[{data:a.buckets.map(b=>b[2]),backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:34}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'% convert · '+a.buckets[c.dataIndex][1].toLocaleString()+' trials'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{title:{display:true,text:'engagement score',font:{size:10},color:'#8B95A6'},ticks:{font:{size:10},color:'#8B95A6'},grid:{display:false},border:{display:false}}}}});
+  const dc=a.dbCurve||[];
+  mkChart('c-eng',{type:'bar',data:{labels:dc.map(d=>d.k===5?'5+':String(d.k)),
+    datasets:[{data:dc.map(d=>d.conv),
+      backgroundColor:dc.map(d=>d.k>=2?'#12A374':(d.k===1?'#D64542':'#C3CAD4')),
+      borderRadius:3,maxBarThickness:44}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{title:c=>c[0].label+' database'+(c[0].label==='1'?'':'s'),
+          label:c=>c.parsed.y+'% convert · '+(dc[c.dataIndex]?dc[c.dataIndex].n.toLocaleString():'0')+' trials'}}},
+      scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},
+        x:{title:{display:true,text:'databases connected',font:{size:10.5},color:'#8B95A6'},
+           ticks:{font:{size:11},color:'#8B95A6'},grid:{display:false},border:{display:false}}}},
+    plugins:[{id:'cliff',afterDatasetsDraw(ch){
+      const {ctx,chartArea:{top,bottom},scales:{x}}=ch;
+      if(dc.length<3) return;
+      const px=(x.getPixelForValue(1)+x.getPixelForValue(2))/2;
+      ctx.save(); ctx.strokeStyle='#12A374'; ctx.setLineDash([4,3]); ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(px,top+14); ctx.lineTo(px,bottom); ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle='#0B7A56'; ctx.font='600 10px Inter'; ctx.textAlign='center';
+      const lift = (dc[1]&&dc[1].conv) ? (dc[2].conv/dc[1].conv).toFixed(1)+'x' : '';
+      ctx.fillText('the cliff  '+lift, px, top+6);
+      ctx.restore();
+    }}]});
 }
 
 // ---------------- Experiments ----------------
