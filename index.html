@@ -813,7 +813,7 @@ function renderActivation(view,f){
   </div>
   <div class="row2">
     <div class="panel"><div class="head"><h3>Activation funnel</h3><span>grey % = step conversion</span></div>${funnelRows}
-      <p class="note"><b>PQL</b> = 3+ databases connected <b>and</b> engagement score ≥ 48. Breadth proves they've deployed it; engagement proves they're using it. PQLs convert ~3× better than everyone else.</p></div>
+      <p class="note"><b>PQL</b> = 3+ databases connected <b>and</b> engagement score ≥ 48 — a deliberately strict bar, because it decides who gets a rep's time. Note this is <i>not</i> the same as our activation lever: conversion starts climbing at the <b>second</b> database (see Engagement), long before a trial qualifies as a PQL. Two databases is what we push trials toward; three is when we hand them to sales.</p></div>
     <div class="panel"><div class="head"><h3>${BOTH?'Where self-hosted falls behind':a.sel+' vs the rest of the portfolio'}</h3><span>% of segment</span></div>
       <div class="chart-box"><canvas id="c-dep"></canvas></div>
       ${BOTH?'':`<p class="note">${a.sel} ships self-hosted only, so there is no SaaS comparison within it. Benchmarked against the other database products instead — the SaaS product (DPM) is the outlier.</p>`}</div>
@@ -1084,7 +1084,7 @@ function renderEng(view,f){
   <div class="row2">
     <div class="panel"><div class="head"><h3>The aha moment: a second database<span class="pillw">our sharpest lever</span></h3><span>conversion by databases connected</span></div>
       <div class="chart-box"><canvas id="c-eng"></canvas></div>
-      <p class="note">The cliff sits between one database and two. Trials monitoring a single database are still <i>testing</i> us. The moment they wire up a second, they've started using us for real work — and conversion steps up sharply. <b>${(a.dbCurve[1]&&a.dbCurve[1].n)?num(a.dbCurve[1].n):'—'} trials are parked at one database.</b> Moving them is the highest-leverage act in the funnel, and it's an in-app nudge, not a campaign.</p></div>
+      <p class="note">The cliff sits between one database and two. Trials monitoring a single database are still <i>testing</i> us. The moment they wire up a second, they've started using us for real work — and conversion steps up sharply. <b>${(a.dbCurve[1]&&a.dbCurve[1].n)?num(a.dbCurve[1].n):'—'} trials are parked at one database.</b> Moving them is the highest-leverage act in the funnel, and it's an in-app nudge, not a campaign.<br><br>Two thresholds, two jobs: <b>2 databases is our target</b> — the point where trials start converting, and what we push them toward. <b>3 databases plus engagement ≥ 48 is our PQL</b> — a stricter bar, because that one decides who gets a phone call.</p></div>
     <div class="panel"><div class="head"><h3>Nurture email performance</h3><span>by sequence step</span></div>${nurtureHTML}</div>
   </div>
   <div class="row2">
@@ -1212,8 +1212,8 @@ function renderExp(view,f){
     <div class="warnbox" style="margin-top:14px">
       ${P.sig
         ? `<b>The conversion lift is real.</b> p = ${P.pv.toFixed(4)}, so we can rule out chance at 95% confidence.`
-        : `<b>We cannot call this a win.</b> B is ahead on conversion by ${P.lift.toFixed(1)}%, but p = ${P.pv.toFixed(3)} — above the 0.05 threshold, so the gap is inside the noise and B could genuinely be no better at all. Activation <i>is</i> significant (p = ${a.metrics[0].pv.toFixed(3)}), so B is doing something real up-funnel — it just hasn't proven itself where it counts. To detect a 10% lift on conversion at 80% power we'd need roughly <b>${num(a.need)}</b> trials per arm; we have ${num(a.nA)} and ${num(a.nB)}. This isn't a failed test — it's an underpowered one.</div>
-    </div>`}
+        : `<b>We cannot call this a win.</b> B is ahead on conversion by ${P.lift.toFixed(1)}%, but p = ${P.pv.toFixed(3)} — above the 0.05 threshold, so the gap is inside the noise and B could genuinely be no better at all. Activation <i>is</i> significant (p = ${a.metrics[0].pv.toFixed(3)}), so B is doing something real up-funnel — it just hasn't proven itself where it counts. To detect a 10% lift on conversion at 80% power we'd need roughly <b>${num(a.need)}</b> trials per arm; we have ${num(a.nA)} and ${num(a.nB)}. This isn't a failed test — it's an underpowered one.`}
+    </div>
   </div>
 
   <div class="panel" style="margin-top:12px">
