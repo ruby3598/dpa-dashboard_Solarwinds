@@ -150,6 +150,12 @@
   .rmhead{margin:22px 0 10px;}
   .rmhead h3{font-family:var(--disp);font-size:17px;font-weight:600;margin:0 0 4px;}
   .rmhead p{font-size:13px;color:var(--text2);margin:0;}
+  .rlist{list-style:none;margin:12px 0 0;padding:0;}
+  .rlist li{display:flex;gap:10px;font-size:13.5px;line-height:1.5;padding:5px 0;color:var(--text2);}
+  .rlist li b{color:var(--text);}
+  .rk{flex-shrink:0;width:74px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+      color:var(--text3);padding-top:3px;}
+  .rk.kill{color:var(--red);}
   .ctrlbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 14px;}
   .ctrlbar .cl{font-size:11.5px;color:var(--text3);margin-left:4px;}
   .ctrlbar select{font-size:12px;padding:5px 8px;}
@@ -1186,31 +1192,40 @@ function renderExp(view,f){
   // ---- roadmap, sized from the live data
   const instPrize = Math.max(a.i1.n*0.25*((a.i2.cvr-a.i1.cvr)/100)*a.ACV, 0);
   const roadmap=[
-    {n:1, t:'In-app nudge: "connect a second database"',
-     hyp:`Because trials at one database convert at <b>${a.i1.cvr.toFixed(1)}%</b> and trials at two convert at <b>${a.i2.cvr.toFixed(1)}%</b>, we believe the second database is where evaluation becomes real work. If we prompt single-database trials in-app to add another, conversion will rise.`,
-     metric:'Primary: % of trials reaching 2+ databases. Guardrail: trial→paid must not fall.',
-     kill:'Kill if prompted trials add a second database at the same rate as the control.',
-     imp:[[M(instPrize),'if 25% move'],[num(a.i1.n),'trials at one DB'],['Low','effort — Pendo, no engineering']]},
-    {n:2, t:'Error-specific setup emails, not one generic nudge',
-     hyp:`Because <b>${num(a.failed)}</b> trials hit a connection error and all receive the same "finish your setup" email, we believe a permissions error and a firewall error need different help. If we send the exact GRANT statement to permission failures and a pre-written network request to firewall failures, DB-connect rate will rise.`,
-     metric:'Primary: DB-connect rate among error trials. Guardrail: unsubscribe rate.',
-     kill:'Kill if segmented emails connect at no better rate than the generic one.',
+    {n:1, t:'Nudge trials to add a second database',
+     why:`One database converts at <b>${a.i1.cvr.toFixed(1)}%</b>. Two converts at <b>${a.i2.cvr.toFixed(1)}%</b>.`,
+     test:'In-app prompt when a trial has only one database connected.',
+     measure:'% of trials reaching 2+ databases. Guardrail: trial→paid must not fall.',
+     kill:'Prompted trials add a second database at the same rate as control.',
+     imp:[[M(instPrize),'if 25% move'],[num(a.i1.n),'stuck at one'],['Low','Pendo, no engineering']]},
+
+    {n:2, t:'Send the fix for their error, not a generic reminder',
+     why:`<b>${num(a.failed)}</b> trials hit a connection error and all get the same "finish your setup" email.`,
+     test:'Split by error code: GRANT statement for permissions, network request for firewalls.',
+     measure:'DB-connect rate among error trials. Guardrail: unsubscribe rate.',
+     kill:'Segmented emails connect no better than the generic one.',
      imp:[[num(a.failed),'trials hit an error'],['1 week','to ship in Marketo']]},
-    {n:3, t:'Pre-flight qualifier on the download page',
-     hyp:`Because trials discover unsupported platforms and firewall blocks only <i>after</i> installing, we believe asking two questions post-signup would let us route help before they fail. If we ask which database and whether it sits behind a firewall, activation will rise.`,
-     metric:'Primary: self-hosted activation. Guardrail: signup→download rate must not fall.',
-     kill:'Kill if activation is flat, or if the questions depress download rate at all.',
-     imp:[[num(a.shNoConn),'installed but never connected'],['Low','effort']]},
-    {n:4, t:'Start the trial clock at first install, not at signup',
-     hyp:`Because self-hosted setup depends on IT approval cycles measured in weeks while the trial runs 14 days, we believe a share of trials expire before they are even able to install. If the clock starts at install, self-hosted conversion will rise.`,
-     metric:'Primary: self-hosted trial→paid. Guardrail: sales cycle length must not balloon.',
-     kill:'Kill if time-to-install shows no clustering near the 14-day boundary.',
-     imp:[['Medium','effort — needs Product'],['High','impact if true']]},
-    {n:5, t:'Randomised holdout on sales coverage of PQLs',
-     hyp:`Because sales-assisted trials convert at <b>${a.naive.yes.cvr.toFixed(1)}%</b> against <b>${a.naive.no.cvr.toFixed(1)}%</b> self-serve — but among PQLs the gap collapses to <b>${a.sa.yes.cvr.toFixed(1)}%</b> vs <b>${a.sa.no.cvr.toFixed(1)}%</b> — we believe the headline gap is a selection effect, not a causal lift. If we randomly withhold sales touch from a slice of PQLs, conversion will not fall.`,
-     metric:'Primary: incremental conversion lift from sales touch. Guardrail: none — this is a measurement test.',
+
+    {n:3, t:'Ask two questions on the download page',
+     why:'Trials find out their platform is unsupported only after installing.',
+     test:'Which database? Behind a firewall? Asked after signup, so no signups are lost.',
+     measure:'Self-hosted activation. Guardrail: download rate must not fall.',
+     kill:'Activation is flat, or the questions depress downloads at all.',
+     imp:[[num(a.shNoConn),'installed, never connected'],['Low','effort']]},
+
+    {n:4, t:'Start the trial clock at install, not at signup',
+     why:'Setup waits on IT approval — weeks. The trial runs 14 days.',
+     test:'Clock starts when the software first runs.',
+     measure:'Self-hosted trial→paid. Guardrail: sales cycle must not balloon.',
+     kill:'Time-to-install shows no clustering near the 14-day boundary.',
+     imp:[['Medium','needs Product'],['High','impact if true']]},
+
+    {n:5, t:'Hold back sales on some PQLs, and measure',
+     why:`Sales-assisted looks 4× better — but among PQLs the gap nearly vanishes (<b>${a.sa.yes.cvr.toFixed(1)}%</b> vs <b>${a.sa.no.cvr.toFixed(1)}%</b>). Reps get routed to buyers.`,
+     test:'Randomly withhold sales touch from a slice of PQLs.',
+     measure:'The true incremental lift from a rep touching a trial.',
      kill:'If the holdout converts materially worse, the lift is real and we scale coverage.',
-     imp:[[num(a.sa.no.n),'PQLs with no rep today'],['Zero','cost — just stop routing some']]}
+     imp:[[num(a.sa.no.n),'PQLs with no rep'],['Zero','cost']]}
   ];
 
   view.innerHTML=`
@@ -1238,7 +1253,7 @@ function renderExp(view,f){
       <tbody>${a.byPersona.map(x=>segrow(x,'persona')).join('')}
              ${a.byDeploy.map(x=>segrow(x,'deployment_type')).join('')}</tbody></table>
     ${flips?`<div class="warnbox" style="margin-top:14px">
-      <b>The average is hiding two opposite effects.</b> B lifts conversion for <b>DBAs</b> but <i>depresses</i> it for <b>developers</b>. A single blended number would have told us to ship it to everyone — and we'd have quietly made things worse for one of our three personas. This is why we segment before we ship, and it is the strongest argument in this whole tab for not trusting a top-line result.
+      <b>The average is hiding two opposite effects.</b> B lifts conversion for DBAs and <i>depresses</i> it for developers. Shipping the blended result would have quietly made things worse for one of our three personas.
     </div>`:''}
   </div>
 
@@ -1251,17 +1266,18 @@ function renderExp(view,f){
       {lab:'PQLs nobody touched', val:a.sa.no.cvr, sub:num(a.sa.no.n)+' PQLs', color:'#12A374'}
     ])}
     <div class="warnbox" style="margin-top:14px">
-      <b>Neither of these is a result we can act on yet.</b> We <i>chose</i> who to extend and who to call — so the people in those groups were already different. Sales-assisted trials convert at ${a.naive.yes.cvr.toFixed(1)}% against ${a.naive.no.cvr.toFixed(1)}% self-serve, which looks decisive. But hold intent constant and look only at PQLs and the gap all but vanishes: ${a.sa.yes.cvr.toFixed(1)}% vs ${a.sa.no.cvr.toFixed(1)}%. Reps are being routed to trials that were already going to buy. <b>We should not scale headcount on that number — we should run the holdout (test 5 below).</b>
+      <b>We can't act on either of these yet.</b> We <i>chose</i> who to extend and who to call, so those groups were already different. Sales-assisted looks decisive at ${a.naive.yes.cvr.toFixed(1)}% vs ${a.naive.no.cvr.toFixed(1)}% — but among PQLs the gap nearly vanishes (${a.sa.yes.cvr.toFixed(1)}% vs ${a.sa.no.cvr.toFixed(1)}%). Reps are routed to trials that were already going to buy. <b>Run the holdout before scaling headcount.</b>
     </div>
   </div>
 
-  <div class="rmhead"><h3>Our experimentation roadmap</h3><p>Every test states the belief, the number that proves it, and the condition that kills it. Ranked by expected impact over effort.</p></div>
+  <div class="rmhead"><h3>Our experimentation roadmap</h3><p>Ranked by impact over effort. Every test names the number that proves it — and the result that kills it.</p></div>
   ${roadmap.map(r=>`<div class="ins">
     <div class="top"><div class="rank">${r.n}</div><h4>${r.t}</h4></div>
-    <p class="ev">${r.hyp}</p>
-    <ul class="acts">
-      <li><b>How we'd measure it:</b> ${r.metric}</li>
-      <li><b>How we'd know we were wrong:</b> ${r.kill}</li>
+    <ul class="rlist">
+      <li><span class="rk">Why</span> ${r.why}</li>
+      <li><span class="rk">Test</span> ${r.test}</li>
+      <li><span class="rk">Measure</span> ${r.measure}</li>
+      <li><span class="rk kill">Kill it if</span> ${r.kill}</li>
     </ul>
     <div class="impact">${r.imp.map(i=>`<div><p class="n">${i[0]}</p><p class="c">${i[1]}</p></div>`).join('')}</div>
   </div>`).join('')}
