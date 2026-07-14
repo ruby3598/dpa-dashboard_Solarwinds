@@ -144,6 +144,12 @@
   .warnbox{background:rgba(214,69,66,.08);border:1px solid rgba(214,69,66,.25);border-radius:10px;
            padding:11px 13px;font-size:13px;line-height:1.5;color:var(--text);}
   .sub2{font-size:10.5px;color:var(--text3);}
+  .errrow{padding:11px 0;border-bottom:1px solid var(--line);}
+  .errrow:last-child{border-bottom:0;}
+  .errfix{font-size:12.5px;color:var(--text2);margin:0 0 0 160px;line-height:1.5;}
+  .errfix b{color:var(--text);}
+  .ec{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;background:#F1F3F6;
+      color:var(--text2);padding:2px 6px;border-radius:4px;margin-right:6px;}
   @media(max-width:760px){ .row2{grid-template-columns:1fr;} .brand .sub{display:none;} .ins .top{flex-wrap:wrap;} .bigpair{flex-wrap:wrap;} }
 </style>
 </head>
@@ -202,7 +208,7 @@ const FB = {
   pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
 };
 
-const VIEWS = ['Overview','Activation funnel','Acquisition & CAC','Engagement & nurture','Experiments','Pipeline','Insights'];
+const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Pipeline','Insights'];
 let TRIALS=null, PUMAP=null, CHANNEL=null, CAMPAIGN=null, CRM=null, NURTURE=null, SB=null;
 let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
@@ -280,6 +286,9 @@ async function loadSnapshot(){
         sales_assisted:!!T.sales_assisted[i],trial_extended:!!T.trial_extended[i],
         cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null,
         ad_group:T.ad_group?T.ad_group[i]:null,
+        setup_stage:T.setup_stage?T.setup_stage[i]:null,
+        setup_err:T.setup_err?T.setup_err[i]:-1,
+        setup_attempts:T.setup_attempts?T.setup_attempts[i]:0,
         daymask:T.daymask?T.daymask[i]:null});
       PUMAP[id]={trial_id:id,installed:!!T.installed[i],db_connected:!!T.db_connected[i],
         time_to_activate_hrs:T.time_to_activate_hrs[i],feature_adoption_rate:T.feature_adoption_rate[i],
@@ -1211,6 +1220,130 @@ function renderInsights(view,f){
   view.querySelectorAll('.aud').forEach(b=> b.onclick=()=>{ insAud=b.dataset.aud; render(); });
 }
 
+// ---------------- Product events (in-product behaviour) ----------------
+const SETUP_STEPS=['Trial started','Installer downloaded','Install completed','App first open',
+  'Connect wizard opened','DB platform selected','Credentials entered','Connection attempted',
+  'Connection succeeded','First analysis run'];
+const SETUP_ERRS=['ERR_PERMISSION_DENIED','ERR_NETWORK_UNREACHABLE','ERR_AUTH_FAILED','ERR_VERSION_UNSUPPORTED','ERR_TIMEOUT'];
+const ERR_HUMAN={
+  ERR_PERMISSION_DENIED:['Permission denied','Their DB user lacks monitoring rights','Send the exact GRANT statement for their platform. One email, one line of SQL, problem solved.'],
+  ERR_NETWORK_UNREACHABLE:['Network unreachable','A firewall is blocking the port','Port + firewall checklist, and prompt them to loop in their network team — they cannot fix this alone.'],
+  ERR_AUTH_FAILED:['Auth failed','Wrong username or password','Credential walkthrough. Cheapest fix on the list.'],
+  ERR_VERSION_UNSUPPORTED:['Version unsupported','We do not support their DB version','Be honest fast. Route to a supported product or the roadmap — do not let them burn the trial.'],
+  ERR_TIMEOUT:['Timeout','Connection hung','Usually network too. Same checklist, plus a health-check retry.']
+};
+// stage -> the segment sitting there, and what to do about them
+const SEG={
+  0:['Never downloaded the installer','Signed up and vanished. The trial clock is already running.','Day-1 email: "Your download link" + a 3-minute setup video. Nothing else.','hi'],
+  1:['Downloaded, never installed','Almost certainly blocked — a server, a change request, an IT approval.','This is the handoff wall. Prompt them to invite a sysadmin, and offer a hosted sandbox so evaluation can start today.','hi'],
+  2:['Installed, never opened the app','Software is running. Nobody has looked at it.','In-app: nothing to send. Email: "You are 2 minutes from your first analysis."','md'],
+  3:['Opened the app, never clicked Connect','They are staring at an empty dashboard, unsure what to do.','Pendo tour on first open: point at the Connect button. No engineering needed.','md'],
+  4:['Opened the Connect wizard, abandoned','They looked at what was required and backed out.','Simplify the wizard. Show what they will need BEFORE they start.','md'],
+  5:['Their database platform is not supported','They came, they looked, we do not support their database.','Tell them immediately, at signup — a pre-flight qualifier. Then route them to a product that does.','hi'],
+  6:['Entered credentials, never submitted','Hesitated at the last step. Unsure, or missing a value.','Inline help on the credentials screen. This is a 5-minute Pendo tooltip.','lo'],
+  7:['Tried to connect — it failed','They did everything right and hit an error.','Send the fix for their specific error. See the breakdown below.','hi'],
+  8:['Connected, never ran an analysis','The plumbing works. They never saw a single insight.','Guide them to the first wait-time analysis. This is the aha moment and they are one click away.','hi']
+};
+
+function cEvents(f){
+  if(!HAVE() || TRIALS[0].setup_stage==null) return null;
+  const F=filt(f), n=F.length||1;
+  const at=s=>F.filter(r=>r.setup_stage===s).length;
+  const reached=s=>F.filter(r=>r.setup_stage>=s).length;
+  const funnel=SETUP_STEPS.map((lab,i)=>{
+    const v = i===7 ? F.filter(r=>r.setup_stage>=7).length : reached(i);
+    return {lab, i, v};
+  });
+  const stuck=[];
+  for(let s=0;s<=8;s++){ const c=at(s); if(c>0 && SEG[s]) stuck.push({s, n:c, ...{}, seg:SEG[s]}); }
+  stuck.sort((a,b)=>b.n-a.n);
+  // failures
+  const failed=F.filter(r=>r.setup_stage===7);
+  const errs=SETUP_ERRS.map((e,i)=>({e, n:failed.filter(r=>r.setup_err===i).length}))
+    .filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
+  // failed then recovered — proof that help works
+  const recovered=F.filter(r=>r.setup_stage>=8 && r.setup_err>=0).length;
+  const recoverRate = (recovered+failed.length) ? pct(recovered, recovered+failed.length) : 0;
+  const avgAttempts = failed.length ? mean(failed.map(r=>+r.setup_attempts||0)) : 0;
+  return {n:F.length, funnel, stuck, errs, failed:failed.length, recovered, recoverRate, avgAttempts};
+}
+
+function renderEvents(view,f){
+  const a=cEvents(f);
+  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Product events</p><p>No event data in this slice.</p></div>'; return; }
+  const num=x=>Math.round(x).toLocaleString();
+  const mx=a.funnel[0].v||1;
+  const frows=a.funnel.map((s,i)=>{
+    const prev=i?a.funnel[i-1].v:null;
+    const step=prev? pct(s.v,prev):null;
+    const drop=prev? prev-s.v : 0;
+    return `<div class="frow">
+      <span class="fname" style="width:150px">${s.lab}</span>
+      <div class="ftrack"><div class="ffill" style="width:${Math.max(s.v/mx*100,1)}%;background:${i>=8?'#12A374':'var(--sw)'}"></div></div>
+      <span class="fnum" style="width:62px">${num(s.v)}</span>
+      <span class="fstep" style="width:46px">${step==null?'—':step.toFixed(0)+'%'}</span>
+      <span class="fstep" style="width:66px;color:${drop>0?'#D64542':'var(--text3)'}">${drop>0?'−'+num(drop):''}</span>
+    </div>`;}).join('');
+
+  const srows=a.stuck.map(x=>{
+    const [title,what,action,pri]=x.seg;
+    return `<div class="ins">
+      <div class="top">
+        <div class="rank${pri==='hi'?'':' warn'}">${num(x.n)>999?'!':x.s}</div>
+        <h4>${title}</h4>
+        <div class="tags"><span class="tag ${pri}">${pri==='hi'?'High priority':pri==='md'?'Medium':'Low'}</span>
+          <span class="tag">${num(x.n)} trials</span></div>
+      </div>
+      <p class="ev">${what}</p>
+      <ul class="acts"><li><b>Action:</b> ${action}</li></ul>
+    </div>`;}).join('');
+
+  const emax=Math.max(...a.errs.map(e=>e.n),1);
+  const erows=a.errs.map(e=>{
+    const [h,why,fix]=ERR_HUMAN[e.e]||[e.e,'',''];
+    return `<div class="errrow">
+      <div class="frow" style="margin-bottom:6px">
+        <span class="fname" style="width:150px"><b>${h}</b></span>
+        <div class="ftrack"><div class="ffill" style="width:${Math.max(e.n/emax*100,2)}%;background:#D64542"></div></div>
+        <span class="fnum">${num(e.n)}</span>
+      </div>
+      <p class="errfix"><span class="ec">${e.e}</span> ${why}. <b>${fix}</b></p>
+    </div>`;}).join('');
+
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Tried to connect, failed</p><p class="v" style="color:var(--red)">${num(a.failed)}</p><p class="s">did everything right, hit an error</p></div>
+    <div class="kpi"><p class="l">Failed, then recovered</p><p class="v" style="color:var(--green)">${num(a.recovered)}</p><p class="s">${a.recoverRate.toFixed(0)}% of those who hit an error</p></div>
+    <div class="kpi"><p class="l">Avg attempts before giving up</p><p class="v sm">${a.avgAttempts.toFixed(1)}</p><p class="s">they tried, repeatedly</p></div>
+    <div class="kpi"><p class="l">Trials in this slice</p><p class="v sm">${num(a.n)}</p><p class="s">matching your filters</p></div>
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Setup event funnel<span class="pillw">what they actually clicked</span></h3>
+      <span>step % · trials lost</span></div>
+    ${frows}
+    <p class="note">This is the level a product-analytics tool (Pendo, Amplitude) would give you. The trial funnel says <i>where</i> people stop. This says <i>what they were doing when they stopped</i> — which is the difference between knowing there's a problem and being able to fix it.</p>
+  </div>
+
+  ${a.errs.length?`<div class="panel" style="margin-top:12px;border-color:rgba(214,69,66,.4)">
+    <div class="head"><h3 style="color:var(--red)">They clicked Connect. It failed. Here's why.</h3>
+      <span>${num(a.failed)} trials · each error needs a different email</span></div>
+    ${erows}
+    <div class="warnbox" style="margin-top:14px">
+      <b>This is the segmentation that doesn't exist today.</b> Right now every one of these ${num(a.failed)} people gets the same generic "finish your setup" email. A permissions error and a firewall error are not the same problem — and one of them is solved by a single line of SQL.
+    </div>
+  </div>`:''}
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Every stuck trial, and what to send them</h3><span>sorted by size</span></div>
+    <p class="note" style="margin:0 0 14px">${num(a.n - (a.funnel[9]?a.funnel[9].v:0))} trials in this slice never reached activation. They are not one audience. They are ${a.stuck.length} different audiences, each stuck for a different reason.</p>
+  </div>
+  ${srows}
+
+  <div class="insight">${bulb}
+    <p><b>The recovery number is the argument.</b> ${num(a.recovered)} trials hit a connection error and <i>still</i> got through — they persisted, retried, and made it. ${num(a.failed)} hit the same errors and gave up. The difference between those two groups is not intent. It's whether anyone helped them at the moment they were stuck. That help costs one email each, and we already know exactly which email to send.</p></div>`;
+}
+
 // ---------------- router ----------------
 function render(){
   clearCharts();
@@ -1222,6 +1355,7 @@ function render(){
   try{
     if(active==='Overview') return renderOverview(view,f);
     if(active==='Activation funnel') return renderActivation(view,f);
+    if(active==='Product events') return renderEvents(view,f);
     if(active==='Acquisition & CAC') return renderAcq(view,f);
     if(active==='Engagement & nurture') return renderEng(view,f);
     if(active==='Experiments') return renderExp(view,f);
