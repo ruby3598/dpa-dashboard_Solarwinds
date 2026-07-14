@@ -323,6 +323,7 @@ async function loadSnapshot(){
         sales_assisted:!!T.sales_assisted[i],trial_extended:!!T.trial_extended[i],
         cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null,
         ad_group:T.ad_group?(D.ad_group?dec('ad_group',i):T.ad_group[i]):null,
+        nsent:T.nsent?T.nsent[i]:0, nopen:T.nopen?T.nopen[i]:0, nclick:T.nclick?T.nclick[i]:0,
         setup_stage:T.setup_stage?T.setup_stage[i]:null,
         setup_err:T.setup_err?T.setup_err[i]:-1,
         setup_attempts:T.setup_attempts?T.setup_attempts[i]:0,
@@ -342,8 +343,6 @@ async function loadSnapshot(){
       for(let i=0;i<n;i++){ const d=new Date(b); d.setDate(d.getDate()+T.dayoff[i]);
         TRIALS[i].signup_date = d.toISOString().slice(0,10); }
     }
-    const NS=S.nurture;
-    NURTURE=NS.t.map((ti,i)=>({trial_id:'T'+ti,email_step:NS.steps[NS.s[i]],opened:!!(NS.f[i]&1),clicked:!!(NS.f[i]&2)}));
     return true;
   }catch(e){ console.error('snapshot failed:', e.message); return false; }
 }
@@ -571,18 +570,23 @@ function cEng(f){
   const buckets=B.map(([lab,lo,hi])=>{ const d=F.filter(r=>{const s=+PUMAP[r.trial_id]?.engagement_score; return s>lo&&s<=hi;}); return [lab,d.length,r1(pct(d.filter(r=>r.converted).length,d.length))]; });
   const feat=k=> r1(mean(actd.map(r=>+PUMAP[r.trial_id]?.[k]||0)));
   const features={adoption:r1(mean(actd.map(r=>+PUMAP[r.trial_id]?.feature_adoption_rate||0))*100),logins:feat('logins'),wait:feat('wait_time_analyses_run'),tuning:feat('tuning_advisors_used'),alerts:feat('anomaly_alerts_configured'),reports:feat('reports_generated')};
-  let nurture=null, clickConv=null, open=null, click=null;
-  if(NURTURE){
-    const ids=new Set(F.map(r=>r.trial_id));
-    const rel=NURTURE.filter(e=>ids.has(e.trial_id));
-    const order=['setup_help_1','setup_help_2','feature_spotlight','trial_ending','extension_offer'];
-    const bs={}; rel.forEach(e=>{const o=bs[e.email_step]=bs[e.email_step]||{s:0,o:0,c:0}; o.s++; if(e.opened)o.o++; if(e.clicked)o.c++;});
-    nurture=order.filter(s=>bs[s]).map(s=>[s,bs[s].s,r1(pct(bs[s].o,bs[s].s)),r1(pct(bs[s].c,bs[s].s))]);
-    open=r1(pct(rel.filter(e=>e.opened).length,rel.length)); click=r1(pct(rel.filter(e=>e.clicked).length,rel.length));
-    const clicked=new Set(rel.filter(e=>e.clicked).map(e=>e.trial_id));
-    const cy=F.filter(r=>clicked.has(r.trial_id)), cn=F.filter(r=>!clicked.has(r.trial_id));
-    clickConv=[r1(pct(cn.filter(r=>r.converted).length,cn.length)),r1(pct(cy.filter(r=>r.converted).length,cy.length))];
-  }
+  // nurture, from the per-trial send/open/click bitmasks
+  const NSTEPS=['setup_help_1','setup_help_2','feature_spotlight','trial_ending','extension_offer'];
+  const bit=(m,i)=> (m>>i)&1;
+  const nurture=NSTEPS.map((s,i)=>{
+    const sent=F.filter(r=>bit(r.nsent||0,i)).length;
+    const op=F.filter(r=>bit(r.nopen||0,i)).length;
+    const cl=F.filter(r=>bit(r.nclick||0,i)).length;
+    return [s, sent, sent? r1(pct(op,sent)):0, sent? r1(pct(cl,sent)):0];
+  }).filter(x=>x[1]>0);
+  const totSent=F.reduce((a,r)=>{ let c=0; for(let i=0;i<5;i++) c+=bit(r.nsent||0,i); return a+c; },0);
+  const totOpen=F.reduce((a,r)=>{ let c=0; for(let i=0;i<5;i++) c+=bit(r.nopen||0,i); return a+c; },0);
+  const totClick=F.reduce((a,r)=>{ let c=0; for(let i=0;i<5;i++) c+=bit(r.nclick||0,i); return a+c; },0);
+  const open = totSent? r1(pct(totOpen,totSent)) : null;
+  const click = totSent? r1(pct(totClick,totSent)) : null;
+  const cy=F.filter(r=>(r.nclick||0)>0), cn=F.filter(r=>!(r.nclick||0));
+  const clickConv=[ cn.length? r1(pct(cn.filter(r=>r.converted).length,cn.length)) : 0,
+                    cy.length? r1(pct(cy.filter(r=>r.converted).length,cy.length)) : 0 ];
   return {kpis:{eng:r1(mean(eng)),open,click,adopt:features.adoption},buckets,nurture,features,clickConv};
 }
 
@@ -949,7 +953,7 @@ function renderAcq(view,f){
 
 // ---------------- Engagement & nurture ----------------
 function renderEng(view,f){
-  if(!NURTURE) ensureNurture();
+
   const a=cEng(f);
   let nurtureHTML;
   if(a.nurture){
@@ -994,7 +998,7 @@ function renderEng(view,f){
   <div class="row2">
     <div class="panel"><div class="head"><h3>Feature usage (activated trials)</h3><span>avg per trial</span></div>${featHTML}</div>
     <div class="panel" style="display:flex;align-items:center"><div class="insight" style="margin:0">${bulb}
-      <p><b>Engagement is our strongest buy signal.</b> Trials scoring 61–80 convert around 44% vs ~3% at the bottom — so the game is moving trials up the engagement curve. The extension-offer email earns the highest open rate, and trials that click any nurture email convert ${a.clickConv?('at '+a.clickConv[1].toFixed(0)+'% vs '+a.clickConv[0].toFixed(0)+'%'):'more'}. We should lead with wait-time analysis as the activation "aha".</p></div></div>
+      <p><b>Engagement is our strongest buy signal.</b> Trials in the top band convert around ${a.buckets.length?a.buckets[a.buckets.length-1][2].toFixed(0):'—'}% against near zero at the bottom — so our job is moving trials up the curve, not sending more email. Note the trap: trials that click our nurture convert at ${a.clickConv?a.clickConv[1].toFixed(1):'—'}% vs ${a.clickConv?a.clickConv[0].toFixed(1):'—'}%, but that is <b>correlation, not proof</b> — engaged people both click and buy. The one email that genuinely earns its place is the extension offer, and it works because it removes a blocker rather than adding information.</p></div></div>
   </div>`;
   const rl=Array.from({length:R.days},(_,i)=>'Day '+(i+1));
   const endDay=R.emails.trial_ending||12;
