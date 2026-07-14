@@ -1170,7 +1170,6 @@ function renderExp(view,f){
     <td class="num">${m.p1.toFixed(2)}%</td>
     <td class="num">${m.p2.toFixed(2)}%</td>
     <td class="num" style="color:${m.lift>=0?'#12A374':'#D64542'}">${m.lift>=0?'+':''}${m.lift.toFixed(1)}%</td>
-    <td class="num">${m.ci[0].toFixed(2)} to ${m.ci[1].toFixed(2)}</td>
     <td class="num">${m.pv<0.0001?'&lt;0.0001':m.pv.toFixed(4)}</td>
     <td class="num"><span class="sigpill ${m.sig?'yes':'no'}">${m.sig?'significant':'not significant'}</span></td></tr>`;
 
@@ -1224,12 +1223,12 @@ function renderExp(view,f){
 
   <div class="panel" style="margin-top:12px">
     <div class="head"><h3>Landing page A/B — what the maths actually says</h3><span>two-proportion z-test · 95% confidence</span></div>
-    <table class="dtable"><thead><tr><th>Metric</th><th class="num">A</th><th class="num">B</th><th class="num">Lift</th><th class="num">95% CI (pts)</th><th class="num">p-value</th><th class="num">Verdict</th></tr></thead>
+    <table class="dtable"><thead><tr><th>Metric</th><th class="num">A</th><th class="num">B</th><th class="num">Lift</th><th class="num">p-value</th><th class="num">Verdict</th></tr></thead>
       <tbody>${a.metrics.map(mrow).join('')}</tbody></table>
     <div class="warnbox" style="margin-top:14px">
       ${P.sig
         ? `<b>The conversion lift is real.</b> p = ${P.pv.toFixed(4)}, so we can rule out chance at 95% confidence.`
-        : `<b>We cannot call this a win.</b> B is ahead on conversion by ${P.lift.toFixed(1)}%, but p = ${P.pv.toFixed(3)} — above the 0.05 threshold, so the difference is inside the noise. The confidence interval (${P.ci[0].toFixed(2)} to ${P.ci[1].toFixed(2)} points) still crosses zero, which means B could genuinely be <i>worse</i>. Activation <i>is</i> significant (p = ${a.metrics[0].pv.toFixed(3)}), so B is doing something real up-funnel — it just hasn't proven itself where it counts. To detect a 10% lift on conversion at 80% power we need roughly <b>${num(a.need)}</b> trials per arm; we have ${num(a.nA)} and ${num(a.nB)}.</div>
+        : `<b>We cannot call this a win.</b> B is ahead on conversion by ${P.lift.toFixed(1)}%, but p = ${P.pv.toFixed(3)} — above the 0.05 threshold, so the gap is inside the noise and B could genuinely be no better at all. Activation <i>is</i> significant (p = ${a.metrics[0].pv.toFixed(3)}), so B is doing something real up-funnel — it just hasn't proven itself where it counts. To detect a 10% lift on conversion at 80% power we'd need roughly <b>${num(a.need)}</b> trials per arm; we have ${num(a.nA)} and ${num(a.nB)}. This isn't a failed test — it's an underpowered one.</div>
     </div>`}
   </div>
 
@@ -1267,7 +1266,7 @@ function renderExp(view,f){
     <div class="impact">${r.imp.map(i=>`<div><p class="n">${i[0]}</p><p class="c">${i[1]}</p></div>`).join('')}</div>
   </div>`).join('')}
 
-  <p class="note">Significance is a two-proportion z-test at 95% confidence. Sample-size estimates assume 80% power. Every figure recomputes from the filters above.</p>`;
+  <p class="note">Significance is a two-proportion z-test at 95% confidence: we call a result real only when p &lt; 0.05. Sample-size estimates assume 80% power. Every figure recomputes from the filters above.</p>`;
 }
 
 // ---------------- Pipeline ----------------
