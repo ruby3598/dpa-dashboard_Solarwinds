@@ -285,7 +285,7 @@ async function loadSnapshot(){
         signup_date:dec('month',i)+'-01',activated:!!T.activated[i],is_pql:!!T.is_pql[i],converted:!!T.converted[i],
         sales_assisted:!!T.sales_assisted[i],trial_extended:!!T.trial_extended[i],
         cac_usd:T.cac_usd[i],time_to_convert_days:T.time_to_convert_days[i],acv_usd:T.acv_usd?T.acv_usd[i]:null,
-        ad_group:T.ad_group?T.ad_group[i]:null,
+        ad_group:T.ad_group?(D.ad_group?dec('ad_group',i):T.ad_group[i]):null,
         setup_stage:T.setup_stage?T.setup_stage[i]:null,
         setup_err:T.setup_err?T.setup_err[i]:-1,
         setup_attempts:T.setup_attempts?T.setup_attempts[i]:0,
@@ -429,20 +429,33 @@ function cAcq(f){
     const op=pipeByTrial[r.trial_id];
     if(op){ if(LATE.has(op.stage)) o.late++; if(op.won) o.wonAcv+=(+op.acv_usd||0); } });
 
+  // Ad groups are computed from the trial rows themselves — ad_group sits on every trial.
+  // A broad-match keyword and an exact-match one bring different humans, so they get different funnels.
+  const byAG={};
+  F.forEach(r=>{ const c=r.campaign||'—', g=r.ad_group||'—';
+    const o=byAG[c+'||'+g]=byAG[c+'||'+g]||{campaign:c,name:g,s:0,a:0,q:0,cv:0,late:0,wonAcv:0,spend:0,
+      now:[0,0,0,0,0,0,0,0], jr:[0,0,0,0,0,0,0,0], ko:0};
+    o.s++; o.spend+=(+r.cac_usd||0);
+    if(r.activated)o.a++; if(r.is_pql)o.q++; if(r.converted)o.cv++;
+    const st=stageOf(r);
+    o.now[st]++; for(let k=1;k<=st;k++) o.jr[k]++;
+    if(isDead(r)) o.ko++;
+    const op=pipeByTrial[r.trial_id];
+    if(op){ if(LATE.has(op.stage)) o.late++; if(op.won) o.wonAcv+=(+op.acv_usd||0); } });
+  const agBy={};
+  Object.values(byAG).forEach(o=>{
+    (agBy[o.campaign]=agBy[o.campaign]||[]).push({name:o.name, signups:o.s, act:o.a, pql:o.q, conv:o.cv,
+      late:o.late, wonAcv:o.wonAcv, spend:o.spend, now:o.now, jr:o.jr, ko:o.ko,
+      cps:o.s?o.spend/o.s:0, cpa:o.cv?o.spend/o.cv:0,
+      cvr:pct(o.cv,o.s), actR:pct(o.a,o.s), pqlR:pct(o.q,o.s)});
+  });
+  Object.values(agBy).forEach(l=>l.sort((x,y)=>y.signups-x.signups));
+
   const campaigns=Object.entries(byCmp).map(([c,o])=>{
-    const share = sigAllC[c] ? Math.min(o.s/sigAllC[c],1) : 0;
-    const spend = (spendC[c]||0)*share;
-    const ags=(agMix[c]||[]).map(([name,mix,fullSpend])=>{
-      const s=Math.round(o.s*mix), a=Math.round(o.a*mix), cv=Math.round(o.cv*mix);
-      const sc=arr=>arr.map(v=>Math.round(v*mix));
-      return {name,signups:s,act:a,conv:cv,spend:fullSpend*share,
-        cps:s?fullSpend*share/s:0, cpa:cv?fullSpend*share/cv:0, cvr:pct(cv,s),
-        now:sc(o.now), jr:sc(o.jr), ko:Math.round(o.ko*mix), pqlR:null,
-        actR:s?pct(a,s):0};
-    }).sort((x,y)=>y.spend-x.spend);
+    const spend=(agBy[c]||[]).reduce((a,g)=>a+g.spend,0);
     return {campaign:c,channel:o.ch,signups:o.s,act:o.a,pql:o.q,conv:o.cv,late:o.late,wonAcv:o.wonAcv,spend,
       cps:o.s?spend/o.s:0, cpa:o.cv?spend/o.cv:0, cvr:pct(o.cv,o.s),
-      actR:pct(o.a,o.s), pqlR:pct(o.q,o.s), now:o.now, jr:o.jr, ko:o.ko, ad_groups:ags};
+      actR:pct(o.a,o.s), pqlR:pct(o.q,o.s), now:o.now, jr:o.jr, ko:o.ko, ad_groups:agBy[c]||[]};
   });
 
   const byCh={};
