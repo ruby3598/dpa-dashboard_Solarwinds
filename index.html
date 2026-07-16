@@ -254,7 +254,7 @@ const FB = {
   pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
 };
 
-const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Retention','Pipeline','Insights'];
+const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Retention','Pipeline','Unit economics','Insights'];
 let TRIALS=null, PUMAP=null, CHANNEL=null, CAMPAIGN=null, CRM=null, NURTURE=null, SB=null;
 let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
@@ -269,6 +269,22 @@ const DIMFIELD={deployment:'deployment_type', persona:'persona', company_size:'c
 const DIMLABEL={self_hosted:'Self-hosted', saas:'SaaS', DBA:'DBA', IT_ops:'IT ops', developer:'Developer',
                 SMB:'SMB', mid_market:'Mid-market', enterprise:'Enterprise'};
 const HAVE = () => TRIALS && TRIALS.length;
+
+// ---- Unit economics ----
+// LTV is built from real per-customer ACV and observed months retained.
+// Gross margin is the ONE assumption; edit it here to reflower the whole tab.
+const GROSS_MARGIN = 0.80;   // SaaS software gross margin
+// Sample-data fallback (only shown before the snapshot loads, or if it fails).
+// Derived from the same FB numbers so nothing contradicts the other tabs.
+FB.economics = (()=>{
+  const gm=GROSS_MARGIN, lifeMo=11, avgACV=FB.pipeline.kpis.avg_acv;
+  const mk=(sp,cv)=>{ const cac=cv?sp/cv:0, mgp=avgACV/12*gm, ltv=mgp*lifeMo;
+    return {cac,acv:avgACV,life:lifeMo,ltv,ratio:cac?ltv/cac:0,payback:mgp?cac/mgp:0}; };
+  const rows=FB.acquisition.channels.map(([ch,sg,cv,sp])=>({ch,spend:sp,customers:cv,...mk(sp,cv)}))
+                 .filter(r=>r.customers>0).sort((a,b)=>b.ratio-a.ratio);
+  const cust=FB.acquisition.totals.conv, spend=FB.acquisition.totals.spend, b=mk(spend,cust);
+  return {gm,lifeMo,avgACV,customers:cust,spend,activeShare:56,...b,rows};
+})();
 
 const mean = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
 const median = a => { if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y); const m=Math.floor(s.length/2); return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
@@ -770,6 +786,8 @@ function overviewHTML(){
     <div class="kpi"><p class="l">Customer acq. cost</p><p class="v" id="k-cac">–</p><p class="s">avg per trial</p></div>
     <div class="kpi"><p class="l">Trial abandonment</p><p class="v" id="k-aband" style="color:var(--red)">–</p><p class="s">signed up, never activated</p></div>
     <div class="kpi"><p class="l">Feature adoption</p><p class="v" id="k-feat">–</p><p class="s">of activated trials</p></div>
+    <div class="kpi"><p class="l">LTV : CAC</p><p class="v" id="k-ltvcac">–</p><p class="s">healthy ≥ 3× · see Unit economics</p></div>
+    <div class="kpi"><p class="l">CAC payback</p><p class="v sm" id="k-payback">–</p><p class="s">months to recover CAC</p></div>
   </div>
   <div class="row2">
     <div class="panel"><div class="head"><h3>Activation funnel</h3><span id="fn-note"></span></div><div id="funnel"></div></div>
@@ -787,6 +805,13 @@ function renderOverview(view,f){
   document.getElementById('k-cac').textContent = '$'+a.kpis.cac;
   document.getElementById('k-aband').textContent = a.kpis.abandonment.toFixed(1)+'%';
   document.getElementById('k-feat').textContent = a.kpis.feature_adoption+'%';
+  const e=cEconomics(f);
+  const elR=document.getElementById('k-ltvcac'), elP=document.getElementById('k-payback');
+  if(e.customers){
+    elR.textContent = (e.ratio>=10? Math.round(e.ratio) : e.ratio.toFixed(1))+'×';
+    elR.style.color = e.ratio>=3?'var(--green)' : e.ratio>=1?'var(--sw)' : 'var(--red)';
+    elP.textContent = e.payback.toFixed(1)+' mo';
+  } else { elR.textContent='—'; elP.textContent='—'; }
   const max = a.funnel[0][1] || 1;
   document.getElementById('funnel').innerHTML = a.funnel.map(([name,n])=>`<div class="frow"><span class="fname">${name}</span><div class="ftrack"><div class="ffill" style="width:${Math.max(n/max*100,1)}%"></div></div><span class="fnum">${n.toLocaleString()}</span></div>`).join('');
   mkChart('trend',{type:'bar',data:{labels:a.trend.labels,datasets:[{data:a.trend.values,backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:22}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'% conversion'}}},scales:{y:{ticks:{callback:v=>v+'%',font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},x:{ticks:{font:{size:10},color:'#8B95A6',maxRotation:0,autoSkip:true,maxTicksLimit:8},grid:{display:false},border:{display:false}}}}});
@@ -1832,6 +1857,102 @@ function renderRetention(view,f){
 }
 
 // ---------------- router ----------------
+// ---------------- compute (Unit economics) ----------------
+// CAC = acquisition spend / paying customers.  LTV = (ACV/12 x margin) x observed months retained.
+// Everything comes from `trials`, so it respects every filter — spend, ACV and lifetime all move together.
+function cEconomics(f){
+  if(!HAVE()) return FB.economics;
+  const gm=GROSS_MARGIN, F=filt(f);
+  const paid=F.filter(r=>r.converted);
+  const customers=paid.length;
+  const spend=F.reduce((s,r)=>s+(+r.cac_usd||0),0);
+  const avgACV=customers? mean(paid.map(r=>+r.acv_usd||0)) : 0;
+  const lifeV=paid.map(r=>+r.months_retained).filter(x=>x===x&&x>=0);
+  const lifeMo=lifeV.length? mean(lifeV) : 0;
+  const activeShare=customers? pct(paid.filter(r=>r.still_active).length,customers) : 0;
+  const mgp=avgACV/12*gm, cac=customers? spend/customers : 0, ltv=mgp*lifeMo;
+  const byCh={};
+  F.forEach(r=>{ const c=r.acquisition_channel; if(!c) return;
+    const o=byCh[c]||(byCh[c]={ch:c,spend:0,customers:0,acvSum:0,lifeSum:0,lifeN:0});
+    o.spend+=(+r.cac_usd||0);
+    if(r.converted){ o.customers++; o.acvSum+=(+r.acv_usd||0);
+      const m=+r.months_retained; if(m===m&&m>=0){ o.lifeSum+=m; o.lifeN++; } } });
+  const rows=Object.values(byCh).map(o=>{
+    const acv=o.customers? o.acvSum/o.customers : 0, life=o.lifeN? o.lifeSum/o.lifeN : 0;
+    const m=acv/12*gm, c=o.customers? o.spend/o.customers : 0, l=m*life;
+    return {ch:o.ch,spend:o.spend,customers:o.customers,acv,life,cac:c,ltv:l,
+            ratio:c? l/c : 0, payback:m? c/m : 0}; })
+    .filter(r=>r.customers>0).sort((a,b)=>b.ratio-a.ratio);
+  return {gm,lifeMo,avgACV,customers,spend,cac,ltv,ratio:cac? ltv/cac : 0,
+          payback:mgp? cac/mgp : 0, activeShare, rows};
+}
+
+// ---------------- Unit economics ----------------
+function renderEconomics(view,f){
+  const e=cEconomics(f);
+  const M=x=>'$'+Math.round(x).toLocaleString();
+  const rx=v=> (v>=10? Math.round(v) : v.toFixed(1))+'×';
+  const rcol=v=> v>=3?'var(--green)' : v>=1?'var(--sw)' : 'var(--red)';
+  if(!e.customers){ view.innerHTML='<div class="placeholder"><p class="n">Unit economics</p><p>No paying customers in this slice — widen the filters to see LTV and CAC.</p></div>'; return; }
+
+  const rowsT=e.rows.map(r=>`<tr>
+      <td>${CH_LABELS[r.ch]||r.ch}</td>
+      <td class="num">${r.customers.toLocaleString()}</td>
+      <td class="num">${M(r.cac)}</td>
+      <td class="num">${M(r.acv)}</td>
+      <td class="num">${r.life.toFixed(1)} mo</td>
+      <td class="num">${M(r.ltv)}</td>
+      <td class="num">${r.payback>0? r.payback.toFixed(1)+' mo':'—'}</td>
+      <td class="num" style="font-weight:600;color:${rcol(r.ratio)}">${rx(r.ratio)}</td>
+    </tr>`).join('');
+
+  const loss=e.rows.filter(r=>r.ratio<1).map(r=>CH_LABELS[r.ch]||r.ch);
+  const scaled=[...e.rows].sort((a,b)=>b.customers-a.customers).filter(r=>r.ratio>=3).slice(0,2).map(r=>CH_LABELS[r.ch]||r.ch);
+  const lossTxt = loss.length
+    ? `<b>${loss.join(' and ')}</b> ${loss.length>1?'lose':'loses'} money — CAC is higher than the lifetime value each customer returns.`
+    : `Every channel currently returns more than it costs to acquire.`;
+  const scaledTxt = scaled.length
+    ? ` Meanwhile <b>${scaled.join(' and ')}</b> ${scaled.length>1?'clear':'clears'} the 3× bar at real volume — that's where added budget compounds.`
+    : ``;
+
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">LTV : CAC</p><p class="v" style="color:${rcol(e.ratio)}">${rx(e.ratio)}</p><p class="s">healthy ≥ 3×</p></div>
+    <div class="kpi"><p class="l">Blended CAC</p><p class="v sm">${M(e.cac)}</p><p class="s">per paying customer</p></div>
+    <div class="kpi"><p class="l">Est. LTV</p><p class="v sm">${M(e.ltv)}</p><p class="s">gross profit / customer</p></div>
+    <div class="kpi"><p class="l">CAC payback</p><p class="v sm">${e.payback.toFixed(1)} mo</p><p class="s">to recover spend</p></div>
+    <div class="kpi"><p class="l">Avg customer lifetime</p><p class="v sm">${e.lifeMo.toFixed(1)} mo</p><p class="s">observed, months retained</p></div>
+  </div>
+  <p class="note" style="margin-top:12px"><b>One assumption:</b> ${Math.round(e.gm*100)}% gross margin. Lifetime is measured, not guessed — the average customer has retained ${e.lifeMo.toFixed(1)} months so far, and ${Math.round(e.activeShare)}% are still active, so realized LTV here is a <i>floor</i>: still-paying customers will push it higher.</p>
+
+  <div class="panel" style="margin-top:12px"><div class="head"><h3>What we pay vs what we get back, by channel</h3><span>green LTV bar above the orange CAC bar = profitable</span></div>
+    <div class="chart-box" style="height:250px"><canvas id="ec-cl"></canvas></div></div>
+
+  <div class="panel" style="margin-top:12px"><div class="head"><h3>LTV : CAC by channel</h3><span>green ≥ 3× · orange 1–3× · red &lt; 1×</span></div>
+    <table class="dtable"><thead><tr>
+      <th>Channel</th><th class="num">Customers</th><th class="num">CAC</th><th class="num">Avg ACV</th>
+      <th class="num">Lifetime</th><th class="num">LTV</th><th class="num">Payback</th><th class="num">LTV : CAC</th>
+    </tr></thead><tbody>${rowsT}</tbody></table>
+    <p class="note">Ranked by return on spend. Channels with very low spend (e.g. direct) show inflated ratios because the CAC denominator is tiny — read those as "cheap", not as scalable.</p></div>
+
+  <div class="insight">${bulb}
+    <p><b>Blended, we acquire profitably at ${rx(e.ratio)}</b> (${M(e.ltv)} back for ${M(e.cac)} spent, recovered in ${e.payback.toFixed(1)} months). But the blend hides the spread: ${lossTxt}${scaledTxt} The lever isn't spending less — it's moving budget toward channels that clear 3×.</p></div>
+
+  <p class="note">LTV = (avg ACV ÷ 12 × ${Math.round(e.gm*100)}% margin) × months retained&nbsp;&nbsp;·&nbsp;&nbsp;CAC = acquisition spend ÷ paying customers&nbsp;&nbsp;·&nbsp;&nbsp;Payback = CAC ÷ monthly gross profit. All figures respect the filters above.</p>`;
+
+  const R=e.rows;
+  mkChart('ec-cl',{type:'bar',
+    data:{labels:R.map(r=>CH_LABELS[r.ch]||r.ch),
+      datasets:[
+        {label:'LTV / customer',data:R.map(r=>Math.round(r.ltv)),backgroundColor:'#12A374',borderRadius:3,maxBarThickness:22},
+        {label:'CAC / customer',data:R.map(r=>Math.round(r.cac)),backgroundColor:'#FF6200',borderRadius:3,maxBarThickness:22}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+M(c.parsed.y)}}},
+      scales:{y:{ticks:{callback:v=>usd(v),font:{size:11},color:'#8B95A6'},grid:{color:'#EEF1F5'},border:{display:false}},
+        x:{ticks:{font:{size:10},color:'#8B95A6',maxRotation:0,autoSkip:false},grid:{display:false},border:{display:false}}}}});
+}
+
 function render(){
   clearCharts();
   const view=document.getElementById('view');
@@ -1848,6 +1969,7 @@ function render(){
     if(active==='Experiments') return renderExp(view,f);
     if(active==='Retention') return renderRetention(view,f);
     if(active==='Pipeline') return renderPipe(view,f);
+    if(active==='Unit economics') return renderEconomics(view,f);
     if(active==='Insights') return renderInsights(view,f);
   }catch(e){
     console.error(e);
