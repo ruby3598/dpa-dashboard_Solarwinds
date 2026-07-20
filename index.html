@@ -1418,6 +1418,10 @@ function renderInsights(view,f){
   const a=cIns(f);
   if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Insights</p><p>Loading…</p></div>'; return; }
   const M=a.money, num=x=>Math.round(x).toLocaleString();
+  // Same LTV:CAC definition as Overview / Unit economics (margin- and lifetime-adjusted).
+  const ue=cEconomics(f);
+  const ueRatio = ue.customers ? ue.ratio : 0;
+  const ueTxt = ue.customers ? (ueRatio>=10? Math.round(ueRatio) : ueRatio.toFixed(1))+'×' : '—';
 
   const tabs=`<div class="audbar">${AUDS.map(([id,t,s])=>
     `<button class="aud${insAud===id?' on':''}" data-aud="${id}">
@@ -1432,12 +1436,12 @@ function renderInsights(view,f){
       ${kpi('Won ACV', M(a.acv), `${num(a.won)} customers`, 'var(--green)')}
       ${kpi('Marketing spend', M(a.spend), 'total CAC', null)}
       ${kpi('Contribution', M(a.contrib), 'ACV minus spend', 'var(--sw)')}
-      ${kpi('LTV / CAC', a.ltvcac.toFixed(1)+'x', 'healthy is 3x+', a.ltvcac>=3?'var(--green)':'var(--red)')}
+      ${kpi('LTV : CAC', ueTxt, 'healthy ≥ 3× · see Unit economics', ueRatio>=3?'var(--green)':ueRatio>=1?'var(--sw)':'var(--red)')}
       ${kpi('Trial → paid', a.convRate.toFixed(1)+'%', `of ${num(a.n)} trials`, null)}
     </div>
     <div class="recap">
       <h3>The one-paragraph version</h3>
-      <p>We spend <b>${M(a.spend)}</b> to acquire <b>${num(a.won)}</b> customers worth <b>${M(a.acv)}</b> — a <b>${a.ltvcac.toFixed(1)}x</b> return. The unit economics work.
+      <p>We spend <b>${M(a.spend)}</b> to acquire <b>${num(a.won)}</b> customers worth <b>${M(a.acv)}</b> in first-year ACV — a <b>${a.ltvcac.toFixed(1)}×</b> gross return on spend, or <b>${ueTxt}</b> on a margin-adjusted LTV:CAC basis. Either way the unit economics work.
       ${a.gapOK?`The growth constraint is not demand, it is <b>onboarding</b>: ${a.actRate.toFixed(0)}% of trials ever reach first value, and self-hosted trials activate at <b>${a.SH.act.toFixed(0)}%</b> against <b>${a.SA.act.toFixed(0)}%</b> for SaaS — the same gap in every product. Closing half of it is worth roughly <b>${M(a.setupPrize)}</b> a year, before a dollar of new ad spend.`:''}</p>
     </div>
     <div class="row2">
