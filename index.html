@@ -124,6 +124,35 @@
   .impact div{min-width:96px;}
   .impact .n{font-family:var(--disp);font-weight:600;font-size:19px;margin:0;}
   .impact .c{font-size:11px;color:var(--text3);margin:2px 0 0;}
+  /* ---- Lead quality ---- */
+  .vb{font-size:10.5px;padding:3px 9px;border-radius:20px;white-space:nowrap;font-weight:500;}
+  .vb.cut{background:rgba(214,69,66,.13);color:#A5322F;}
+  .vb.product{background:var(--char);color:#fff;}
+  .vb.scale{background:rgba(18,163,116,.13);color:#0B7A56;}
+  .vb.ok{background:#F1F3F6;color:var(--text2);}
+  .vb.thin{background:transparent;color:var(--text3);}
+  .lqbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+  .lqf{font-family:var(--font);font-size:11.5px;padding:6px 12px;border:1px solid var(--line2);background:var(--card);
+       color:var(--text2);border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+  .lqf:hover{border-color:var(--sw);color:var(--sw);}
+  .lqf.on{background:var(--char);color:#fff;border-color:var(--char);}
+  .lqf .c{font-variant-numeric:tabular-nums;opacity:.65;}
+  .sim{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:center;}
+  .simctl label{font-size:12.5px;color:var(--text2);display:block;margin-bottom:9px;}
+  .simctl label b{color:var(--text);font-size:14px;}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:5px;border-radius:4px;
+       background:#E7EAEF;outline:none;cursor:pointer;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;height:19px;border-radius:50%;
+       background:var(--sw);cursor:pointer;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.22);}
+  input[type=range]::-moz-range-thumb{width:19px;height:19px;border-radius:50%;background:var(--sw);
+       cursor:pointer;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.22);}
+  .simout{display:flex;gap:24px;flex-wrap:wrap;}
+  .simout div{min-width:104px;}
+  .simout .n{font-family:var(--disp);font-weight:600;font-size:25px;margin:0;line-height:1.1;}
+  .simout .c{font-size:11.5px;color:var(--text3);margin:3px 0 0;}
+  .ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text3);margin-top:5px;}
+  @media(max-width:820px){.sim{grid-template-columns:1fr;}}
+
   .recap{background:var(--char);border-radius:14px;padding:18px 20px;color:#fff;}
   .recap h3{margin:0 0 6px;font-family:var(--disp);font-size:15px;}
   .recap p{margin:0;font-size:13.5px;line-height:1.6;color:#D6D9DE;}
@@ -254,7 +283,9 @@ const FB = {
   pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
 };
 
-const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Retention','Pipeline','Unit economics','Insights'];
+const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Lead quality','Engagement & nurture','Experiments','Retention','Pipeline','Unit economics','Insights'];
+let lqFilter='all';      // all | cut | product | scale
+let lqCapture=50;        // % of reallocated budget assumed to perform at benchmark
 let TRIALS=null, PUMAP=null, CHANNEL=null, CAMPAIGN=null, CRM=null, NURTURE=null, SB=null;
 let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
@@ -1957,6 +1988,230 @@ function renderEconomics(view,f){
         x:{ticks:{font:{size:10},color:'#8B95A6',maxRotation:0,autoSkip:false},grid:{display:false},border:{display:false}}}}});
 }
 
+// ---------------- compute (Lead quality) ----------------
+// Answers the oldest argument in B2B: "the leads are bad."
+// Every ad group is graded against the benchmark of the same filtered slice,
+// so the verdict is relative to our own performance, not an arbitrary target.
+function cLeadQuality(f){
+  if(!HAVE()) return null;
+  const F=filt(f);
+  const m={};
+  F.forEach(r=>{
+    const p=PUMAP[r.trial_id]||{};
+    const k=(r.campaign||'—')+'||'+(r.ad_group||'—');
+    const o=m[k]=m[k]||{campaign:r.campaign||'—',ad_group:r.ad_group||'—',ch:r.acquisition_channel,
+                        s:0,inst:0,conn:0,act:0,cv:0,spend:0,acv:0};
+    o.s++;
+    if(p.installed) o.inst++;
+    if(p.db_connected) o.conn++;
+    if(r.activated) o.act++;
+    if(r.converted){ o.cv++; o.acv += (+r.acv_usd||0); }
+    o.spend += (+r.cac_usd||0);
+  });
+  const rows=Object.values(m);
+  if(!rows.length) return null;
+
+  const T={s:0,inst:0,conn:0,act:0,cv:0,spend:0,acv:0};
+  rows.forEach(o=>{ for(const k in T) T[k]+=o[k]; });
+  const bAct = pct(T.act,T.s);          // activation rate — did they reach first value
+  const bCGI = pct(T.conn,T.inst);      // connected, given they installed — the setup step
+  const bCpa = T.cv ? T.spend/T.cv : 0;
+  const avgACV = T.cv ? T.acv/T.cv : 0;
+
+  rows.forEach(o=>{
+    o.instR = pct(o.inst,o.s);
+    o.cgi   = pct(o.conn,o.inst);
+    o.actR  = pct(o.act,o.s);
+    o.cvr   = pct(o.cv,o.s);
+    o.cpa   = o.cv ? o.spend/o.cv : Infinity;
+    // Verdict. Order matters: targeting is tested first, because an ad group that
+    // brings the wrong people will fail every downstream step for a reason that
+    // has nothing to do with the product.
+    if(o.s < MIN_N)                         o.v='thin';
+    else if(o.actR <= bAct*0.80)            o.v='cut';
+    else if(o.cgi  <= bCGI*0.90)            o.v='product';
+    else if(o.actR >= bAct*1.08 && o.cpa<=bCpa) o.v='scale';
+    else                                    o.v='ok';
+  });
+  rows.sort((a,b)=>b.s-a.s);
+
+  const of=v=>rows.filter(r=>r.v===v);
+  const cut=of('cut'), scale=of('scale'), prod=of('product');
+  const cutSpend=cut.reduce((a,r)=>a+r.spend,0), cutCv=cut.reduce((a,r)=>a+r.cv,0);
+  const cutSig=cut.reduce((a,r)=>a+r.s,0);
+  const restSpend=T.spend-cutSpend, restCv=T.cv-cutCv;
+  const restCpa = restCv ? restSpend/restCv : 0;
+
+  // Deployment split — the control test. If the setup step fails at the same rate
+  // across every campaign but splits hard by deployment type, it isn't a lead problem.
+  const dep = dt => { const d=F.filter(r=>r.deployment_type===dt);
+    const i=d.filter(r=>PUMAP[r.trial_id]?.installed).length;
+    const c=d.filter(r=>PUMAP[r.trial_id]?.db_connected).length;
+    return {n:d.length, instR:pct(i,d.length), cgi:pct(c,i), actR:pct(d.filter(r=>r.activated).length,d.length)}; };
+
+  const SH=dep('self_hosted'), SA=dep('saas');
+
+  // Paired test. Comparing deployment types overall would just tell us that some
+  // ad groups skew SaaS. So compare the two deployments *inside the same ad group* —
+  // that holds the traffic source constant and isolates the setup effect.
+  const pair={};
+  F.forEach(r=>{ const k=(r.campaign||'—')+'||'+(r.ad_group||'—');
+    const o=pair[k]=pair[k]||{saas:[0,0], self_hosted:[0,0]};
+    const d=o[r.deployment_type]; if(!d) return;
+    d[0]++; if(r.activated) d[1]++; });
+  const PAIRMIN=40, gaps=[];
+  let pairsN=0, pairsHold=0;
+  Object.values(pair).forEach(o=>{
+    if(o.saas[0]<PAIRMIN || o.self_hosted[0]<PAIRMIN) return;
+    pairsN++;
+    const g=pct(o.saas[1],o.saas[0]) - pct(o.self_hosted[1],o.self_hosted[0]);
+    gaps.push(g); if(g>0) pairsHold++;
+  });
+  const medGap = gaps.length ? median(gaps) : 0;
+
+  return {rows,T,bAct,bCGI,bCpa,avgACV,cut,scale,prod,
+          cutSpend,cutCv,cutSig,restCpa,SH,SA,
+          pairsN,pairsHold,medGap,PAIRMIN,
+          graded:rows.filter(r=>r.v!=='thin').length};
+}
+
+function renderLeadQuality(view,f){
+  const a=cLeadQuality(f);
+  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Lead quality</p><p>No trials in this slice — widen the filters.</p></div>'; return; }
+  const M=x=>'$'+Math.round(x).toLocaleString();
+  const num=x=>Math.round(x).toLocaleString();
+  const VL={cut:'Targeting', product:'Product blocker', scale:'Scale', ok:'Healthy', thin:'Too few'};
+
+  // ---- reallocation scenario ----
+  const cap=lqCapture/100;
+  const wouldWin = a.restCpa ? (a.cutSpend/a.restCpa)*cap : 0;
+  const extraCust = Math.max(0, wouldWin - a.cutCv);
+  const extraARR  = extraCust * a.avgACV;
+  const buyCost   = extraCust * a.bCpa;
+
+  const counts={cut:a.cut.length, product:a.prod.length, scale:a.scale.length,
+                ok:a.rows.filter(r=>r.v==='ok').length};
+  const shown = lqFilter==='all' ? a.rows : a.rows.filter(r=>r.v===lqFilter);
+
+  const rowsHtml = shown.slice(0,40).map(r=>{
+    const bad = v=>`style="color:${v?'var(--red)':'inherit'}"`;
+    return `<tr>
+      <td><b>${r.ad_group}</b><br><span class="fstep" style="width:auto;color:var(--text3)">${r.campaign}</span></td>
+      <td class="num">${num(r.s)}</td>
+      <td class="num">${r.instR.toFixed(0)}%</td>
+      <td class="num" ${bad(r.v==='product')}>${r.cgi.toFixed(0)}%</td>
+      <td class="num" ${bad(r.v==='cut')}>${r.actR.toFixed(0)}%</td>
+      <td class="num">${r.cvr.toFixed(1)}%</td>
+      <td class="num"><b>${isFinite(r.cpa)?M(r.cpa):'—'}</b></td>
+      <td><span class="vb ${r.v}">${VL[r.v]}</span></td>
+    </tr>`; }).join('');
+
+  const worst=[...a.cut].sort((x,y)=>y.spend-x.spend).slice(0,3);
+  const best =[...a.scale].sort((x,y)=>y.s-x.s).slice(0,3);
+  const isProductWide = a.pairsN && a.pairsHold/a.pairsN >= 0.9;
+
+  view.innerHTML=`
+  <div class="grid-kpi">
+    <div class="kpi"><p class="l">Ad groups graded</p><p class="v sm">${a.graded}</p><p class="s">at ${MIN_N}+ signups</p></div>
+    <div class="kpi"><p class="l">Sales is right about</p><p class="v sm" style="color:var(--red)">${counts.cut}</p><p class="s">targeting, not the product</p></div>
+    <div class="kpi"><p class="l">Worth scaling</p><p class="v sm" style="color:var(--green)">${counts.scale}</p><p class="s">good leads, cheap</p></div>
+    <div class="kpi"><p class="l">Spend on bad-fit traffic</p><p class="v" style="color:var(--sw)">${usd(a.cutSpend)}</p><p class="s">${(a.cutSpend/a.T.spend*100).toFixed(0)}% of budget, ${(a.cutCv/a.T.cv*100).toFixed(0)}% of customers</p></div>
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Are the leads actually bad? — verdict by ad group</h3>
+      <span>graded against this slice's own average: ${a.bAct.toFixed(0)}% activation, ${a.bCGI.toFixed(0)}% connect</span></div>
+    <div class="lqbar">
+      <button class="lqf${lqFilter==='all'?' on':''}" data-f="all">All <span class="c">${a.rows.length}</span></button>
+      <button class="lqf${lqFilter==='cut'?' on':''}" data-f="cut">Targeting <span class="c">${counts.cut}</span></button>
+      <button class="lqf${lqFilter==='product'?' on':''}" data-f="product">Product blocker <span class="c">${counts.product}</span></button>
+      <button class="lqf${lqFilter==='scale'?' on':''}" data-f="scale">Scale <span class="c">${counts.scale}</span></button>
+    </div>
+    <table class="dtable"><thead><tr>
+      <th>Ad group</th><th class="num">Signups</th><th class="num">Installed</th>
+      <th class="num">Connected<br><span style="text-transform:none;font-weight:400">of those who installed</span></th>
+      <th class="num">Activated</th><th class="num">Win %</th><th class="num">$/customer</th><th>Verdict</th>
+    </tr></thead><tbody>${rowsHtml || `<tr><td colspan="8" style="color:var(--text2);padding:18px 10px;line-height:1.55">${
+        lqFilter==='product'
+          ? `<b>No single ad group has a setup problem of its own — and that's the finding.</b> Every ad group that clears the volume bar connects at a normal rate once people install, so no campaign caused the setup drop. It splits by deployment type instead, which is the control test below.`
+          : 'Nothing in this bucket for the current filters.'
+      }</td></tr>`}</tbody></table>
+    <p class="note"><b>How the verdict is decided.</b>
+      <span class="vb cut">Targeting</span> activation is 20%+ below our average — these people were never going to buy, so the click was the mistake.
+      <span class="vb product">Product blocker</span> they installed at a normal rate but couldn't connect a database — they tried and we lost them.
+      <span class="vb scale">Scale</span> beats our activation average and costs less per customer.
+      Ad groups under ${MIN_N} signups are never graded.</p>
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>...or is it the product? — the control test</h3>
+      <span>same ad group, both deployments — traffic held constant</span></div>
+    <div class="row2" style="margin-top:0">
+      <div>
+        <div class="frow"><span class="fname" style="width:96px">SaaS</span><div class="ftrack"><div class="ffill" style="width:${a.SA.actR}%;background:var(--green)"></div></div><span class="fnum">${a.SA.actR.toFixed(0)}%</span></div>
+        <div class="frow"><span class="fname" style="width:96px">Self-hosted</span><div class="ftrack"><div class="ffill" style="width:${a.SH.actR}%;background:var(--red)"></div></div><span class="fnum">${a.SH.actR.toFixed(0)}%</span></div>
+        <p class="note" style="margin-top:10px">Activation rate. Install: ${a.SA.instR.toFixed(0)}% SaaS vs ${a.SH.instR.toFixed(0)}% self-hosted — most of the loss happens before anyone connects a database.</p>
+      </div>
+      <div>
+        <p style="font-size:13.5px;line-height:1.55;margin:0 0 11px">
+        Comparing the two overall would only prove that some ad groups skew SaaS. So the test runs
+        <b>inside each ad group</b>, where the traffic source is identical.</p>
+        <p style="font-size:13.5px;line-height:1.55;margin:0">
+        SaaS activates higher in <b>${a.pairsHold} of ${a.pairsN}</b> ad groups that carry enough of both
+        (${a.PAIRMIN}+ trials each), median gap <b>${a.medGap.toFixed(0)} points</b>.
+        ${a.pairsN && a.pairsHold/a.pairsN>=0.9
+          ? `It holds everywhere, so it isn't a traffic-mix artefact — it's the self-hosted install. Better targeting cannot fix it.`
+          : `It doesn't hold consistently, so the setup step looks source-driven rather than deployment-driven.`}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>What's it worth to fix the targeting?</h3><span>reallocation, not extra budget</span></div>
+    <div class="sim">
+      <div class="simctl">
+        <label>If reallocated budget performs at <b id="lq-cap-lbl">${lqCapture}%</b> of our normal efficiency</label>
+        <input type="range" id="lq-cap" min="0" max="100" step="5" value="${lqCapture}">
+        <div class="ticks"><span>0% — it all fails</span><span>50%</span><span>100% — perfect</span></div>
+        <p class="note" style="margin-top:11px">Moving ${usd(a.cutSpend)} out of ${a.cut.length} ad groups that return
+          ${M(a.cutSpend/(a.cutCv||1))} per customer, into the rest of the mix at ${M(a.restCpa)}.</p>
+      </div>
+      <div class="simout">
+        <div><p class="n" style="color:var(--green)">+${num(extraCust)}</p><p class="c">paying customers</p></div>
+        <div><p class="n" style="color:var(--sw)">${usd(extraARR)}</p><p class="c">incremental ARR</p></div>
+        <div><p class="n">${usd(buyCost)}</p><p class="c">what buying that same ARR would cost</p></div>
+        <div><p class="n">$0</p><p class="c">extra budget needed</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="insight">${bulb}
+    <p><b>Sales is right — about ${counts.cut} of ${a.graded} ad groups, not all of them.</b>
+      ${worst.length?`${worst.map(r=>r.campaign+' · '+r.ad_group).join(', ')} take ${usd(a.cutSpend)} between them and return ${a.cutCv} customers at ${M(a.cutSpend/(a.cutCv||1))} each, against ${M(a.bCpa)} blended — those leads genuinely are bad, and it's a targeting fix I own.`:''}
+      ${best.length?`Meanwhile ${best.map(r=>r.campaign+' · '+r.ad_group).join(', ')} beat our activation average at lower cost and deserve the budget.`:''}
+      ${isProductWide?` The second problem is separate and larger: inside the same ad group, self-hosted trials activate ${a.medGap.toFixed(0)} points below SaaS, in ${a.pairsHold} of ${a.pairsN} cases. That one survives any targeting fix — it's the install, and it belongs to product. Two problems, two owners, and the data says which is which.`:''}</p></div>
+
+  <p class="note">Verdicts recompute from the filters above — change the product, region or date range and the grading follows.
+    Won ACV averages ${M(a.avgACV)} in this slice; the scenario assumes reallocation, not new spend.</p>`;
+
+  view.querySelectorAll('.lqf').forEach(b=> b.onclick=()=>{ lqFilter=b.dataset.f; render(); });
+
+  // The slider updates its own numbers in place. A full re-render would rebuild the
+  // input mid-drag and the thumb would come off under the mouse.
+  const sl=document.getElementById('lq-cap');
+  sl.oninput=e=>{
+    lqCapture=+e.target.value;
+    const c=lqCapture/100;
+    const wc=a.restCpa ? (a.cutSpend/a.restCpa)*c : 0;
+    const ec=Math.max(0, wc-a.cutCv);
+    document.getElementById('lq-cap-lbl').textContent=lqCapture+'%';
+    const o=view.querySelectorAll('.simout .n');
+    o[0].textContent='+'+num(ec);
+    o[1].textContent=usd(ec*a.avgACV);
+    o[2].textContent=usd(ec*a.bCpa);
+  };
+}
+
 function render(){
   clearCharts();
   const view=document.getElementById('view');
@@ -1969,6 +2224,7 @@ function render(){
     if(active==='Activation funnel') return renderActivation(view,f);
     if(active==='Product events') return renderEvents(view,f);
     if(active==='Acquisition & CAC') return renderAcq(view,f);
+    if(active==='Lead quality') return renderLeadQuality(view,f);
     if(active==='Engagement & nurture') return renderEng(view,f);
     if(active==='Experiments') return renderExp(view,f);
     if(active==='Retention') return renderRetention(view,f);
