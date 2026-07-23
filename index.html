@@ -338,11 +338,24 @@ async function loadLive(){
 }
 
 // Snapshot = the same rows, shipped with the site. Filters work identically offline.
+let SNAPSHOT_ERR=null, DATA_PATH_USED=null;
+const DATA_CANDIDATES=['data.json','./data.json','/data.json','data (2) (1).json','data__2___1_.json'];
+async function fetchSnapshotJSON(){
+  const tried=[];
+  for(const p of DATA_CANDIDATES){
+    try{
+      const res=await fetch(encodeURI(p),{cache:'no-cache'});
+      if(!res.ok){ tried.push(p+' -> HTTP '+res.status); continue; }
+      const S=await res.json();
+      if(S && S.trials && S.dicts){ DATA_PATH_USED=p; console.info('snapshot loaded from', p); return S; }
+      tried.push(p+' -> parsed, but no trials/dicts key');
+    }catch(e){ tried.push(p+' -> '+e.message); }
+  }
+  throw new Error('data file not found. Tried: '+tried.join('  |  '));
+}
 async function loadSnapshot(){
   try{
-    const res = await fetch('data.json', {cache:'no-cache'});
-    if(!res.ok) throw new Error('data.json '+res.status);
-    const S = await res.json();
+    const S = await fetchSnapshotJSON();
     const D=S.dicts, T=S.trials, n=T.activated.length;
     const dec=(c,i)=> D[c] ? (D[c][T[c][i]] ?? null) : T[c][i];
     TRIALS=[]; PUMAP={};
@@ -378,15 +391,14 @@ async function loadSnapshot(){
         TRIALS[i].signup_date = d.toISOString().slice(0,10); }
     }
     return true;
-  }catch(e){ console.error('snapshot failed:', e.message); return false; }
+  }catch(e){ SNAPSHOT_ERR=e.message; console.error('snapshot failed:', e.message); return false; }
 }
 
 // Snapshot supplies spend + ad-groups when Supabase has no campaign_performance table.
 async function ensureCampaign(){
   if(CAMPAIGN) return;
   try{
-    const res=await fetch('data.json',{cache:'no-cache'}); if(!res.ok) return;
-    const S=await res.json();
+    const S=await fetchSnapshotJSON();
     CAMPAIGN=S.campaign.map(r=>({month:r[0],channel:r[1],campaign:r[2],ad_group:r[3],impressions:r[4],clicks:r[5],spend_usd:r[6],signups:r[7],activated:r[8],conversions:r[9]}));
     if(active==='Acquisition & CAC') render();
   }catch(e){}
@@ -1975,6 +1987,10 @@ function render(){
     if(active==='Pipeline') return renderPipe(view,f);
     if(active==='Unit economics') return renderEconomics(view,f);
     if(active==='Insights') return renderInsights(view,f);
+    view.innerHTML='<div class="placeholder"><p class="n">'+active+'</p>'+
+      '<p>This tab is listed in VIEWS but has no matching branch in render(). '+
+      'The two strings must match exactly.</p></div>';
+    return;
   }catch(e){
     console.error(e);
     view.innerHTML=`<div class="placeholder"><p class="n">${active}</p><p>Something went wrong rendering this view. Check the console.</p></div>`;
@@ -1991,8 +2007,17 @@ function setSource(){
   const dot=document.getElementById('src-dot'), txt=document.getElementById('src-text');
   if(SOURCE==='live'){ dot.className='dot live'; txt.textContent='Live · Supabase'; }
   else if(SOURCE==='snapshot'){ dot.className='dot live'; txt.textContent='Snapshot · full dataset'; }
-  else{ dot.className='dot sample'; txt.textContent='Sample data'; 
-    ['f-product','f-region','f-deployment','f-from','f-to'].forEach(id=>document.getElementById(id).disabled=true); }
+  else{ dot.className='dot sample'; txt.textContent='Sample data';
+    ['f-product','f-region','f-deployment','f-from','f-to'].forEach(id=>document.getElementById(id).disabled=true);
+    const m=document.querySelector('main.wrap');
+    if(m && !document.getElementById('datawarn')){
+      const b=document.createElement('div');
+      b.id='datawarn'; b.className='warnbox'; b.style.margin='0 0 14px';
+      b.innerHTML='<b>Running on fallback sample numbers — the real dataset did not load.</b><br>'+
+        '<span style="font-size:12px;color:var(--text2)">'+(SNAPSHOT_ERR||'unknown error')+'</span>';
+      m.insertBefore(b, m.firstChild);
+    }
+  }
 }
 
 ['f-product','f-region','f-deployment','f-from','f-to'].forEach(id=>document.getElementById(id).addEventListener('change', ()=>{
