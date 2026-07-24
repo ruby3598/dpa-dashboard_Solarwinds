@@ -2072,7 +2072,6 @@ function renderCov(view,f){
   view.innerHTML=`
   <div class="grid-kpi">
     ${kpi('PQLs', num(a.tot.n), 'in this slice', null)}
-    ${kpi('Never worked', num(a.tot.untouched), `${pct(a.tot.untouched,a.tot.n).toFixed(0)}% of the queue`, 'var(--red)')}
     ${kpi('Accepted as opportunity', a.tot.oppRate.toFixed(1)+'%', 'sales\u2019 own verdict', acol(a.tot.oppRate))}
     ${kpi('Won ACV', M(a.tot.acv), `${num(a.tot.won)} customers`, 'var(--green)')}
     ${kpi('Cost per customer', a.tot.won? M(filt(f).reduce((s,r)=>s+(+r.cac_usd||0),0)/a.tot.won):'—', 'blended', null)}
