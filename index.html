@@ -2047,7 +2047,7 @@ function renderCov(view,f){
       <td class="num">${num(o.n)}</td>
       <td class="num" style="color:${acol(o.oppRate)}">${o.oppRate.toFixed(1)}%</td>
       <td class="num">${o.won}</td><td class="num">${o.won?M(o.acv/o.won):'—'}</td>
-      <td class="num" style="color:${vc}">${vt}</td><td></td><td></td></tr>`; };
+      <td class="num" style="color:${vc}">${vt}</td><td></td></tr>`; };
 
   const repRows=a.rows.map(r=>{
     const open=covOpen===r.name;
@@ -2055,17 +2055,16 @@ function renderCov(view,f){
       <td><b>${open?'▾':'▸'} ${r.name}</b><br><span class="sub2">${r.terr}</span></td>
       <td class="num">${num(r.n)}</td>
       <td class="num">${num(r.worked)} · ${pct(r.worked,r.n).toFixed(0)}%</td>
-      <td class="num" style="color:var(--red)">${num(r.untouched)}</td>
       <td class="num" style="color:${acol(r.oppRate)};font-weight:600">${r.oppRate.toFixed(1)}%</td>
       <td class="num">${num(r.won)}</td>
       <td class="num">${r.winRate.toFixed(1)}%</td>
       <td class="num">${M(r.acv)}</td></tr>`;
     if(!open) return head;
     const sub=r.groups.length
-      ? `<tr class="covag"><td colspan="8" style="padding:9px 0 3px 26px;font-size:11.5px;color:var(--text3)">
+      ? `<tr class="covag"><td colspan="7" style="padding:9px 0 3px 26px;font-size:11.5px;color:var(--text3)">
            By ad group — accepted = became a CRM opportunity · min ${MIN_AG} PQLs</td></tr>`
         + r.groups.map(agRow).join('')
-      : `<tr class="covag"><td colspan="8" style="padding-left:26px;color:var(--text3)">No ad group with ${MIN_AG}+ PQLs in this slice.</td></tr>`;
+      : `<tr class="covag"><td colspan="7" style="padding-left:26px;color:var(--text3)">No ad group with ${MIN_AG}+ PQLs in this slice.</td></tr>`;
     return head+sub;
   }).join('');
 
@@ -2092,7 +2091,7 @@ function renderCov(view,f){
   <div class="panel" style="margin-top:12px">
     <div class="head"><h3>Coverage by rep</h3><span>tap a rep to open their ad groups</span></div>
     <table class="dtable"><thead><tr>
-      <th>Rep</th><th class="num">PQLs</th><th class="num">Worked</th><th class="num">Never worked</th>
+      <th>Rep</th><th class="num">PQLs</th><th class="num">Worked</th>
       <th class="num">Accepted</th><th class="num">Won</th><th class="num">Win%</th><th class="num">Won ACV</th>
     </tr></thead><tbody>${repRows}</tbody></table>
     <p class="note">Territories differ, so win rates are not a ranking. <b>Accepted</b> is the honest quality number: the share of PQLs a rep opened as an opportunity. Below ${ACCEPT_BAR}% the source is the problem, not the rep.</p>
