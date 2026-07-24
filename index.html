@@ -52,6 +52,8 @@
   .kpi .v.sm{font-size:23px;}
   .kpi .s{font-size:11.5px;color:var(--text3);margin:0;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
+  tr.covrep:hover td{background:var(--sw-tint);}
+  tr.covag td{background:#FAFBFC;font-size:12.5px;color:var(--text2);border-bottom:1px solid var(--line);}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:17px;}
   .panel h3{font-size:13.5px;font-weight:600;margin:0 0 15px;font-family:var(--font);}
   .panel .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:15px;gap:10px;}
@@ -254,7 +256,7 @@ const FB = {
   pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
 };
 
-const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Retention','Pipeline','Unit economics','Insights'];
+const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Retention','Pipeline','Sales coverage','Unit economics','Insights'];
 let TRIALS=null, PUMAP=null, CHANNEL=null, CAMPAIGN=null, CRM=null, NURTURE=null, SB=null;
 let SOURCE='loading', active='Overview', charts=[], nurtureLoading=false;
 let acqOpen={ch:null, cmp:null};
@@ -1969,6 +1971,160 @@ function renderEconomics(view,f){
         x:{ticks:{font:{size:10},color:'#8B95A6',maxRotation:0,autoSkip:false},grid:{display:false},border:{display:false}}}}});
 }
 
+// ---------------- Sales coverage (rep view) ----------------
+// Reps are territory owners: product x deployment. The rep label is DERIVED
+// from fields already in every trial row — no data file change, no invented
+// numbers. Every figure respects the filters above like every other tab.
+const REP_DEFS=[
+  ['Ryan COLE','DPA · self-hosted',              r=>r.product==='DPA'&&r.deployment_type==='self_hosted'],
+  ['Megan FOSTER','DPA · SaaS',                  r=>r.product==='DPA'&&r.deployment_type==='saas'],
+  ['Chris PALMER','DPM · SaaS',                  r=>r.product==='DPM'&&r.deployment_type==='saas'],
+  ['Laura BENNETT','SQL Sentry · SaaS',          r=>r.product==='SQL Sentry'&&r.deployment_type==='saas'],
+  ['Nathan REED','Self-hosted · DPM, SQL Sentry',r=>r.deployment_type==='self_hosted'&&(r.product==='DPM'||r.product==='SQL Sentry')]
+];
+const DIALS_DAY=4, SELL_DAYS=22, MIN_AG=25, ACCEPT_BAR=25, T2_ENG=40;
+let covOpen=null;
+
+function cCov(f){
+  if(!HAVE()) return null;
+  const F=filt(f);
+  const O={}; (CRM||[]).forEach(o=>{ if(o.trial_id) O[o.trial_id]=o; });
+  const pql=F.filter(r=>r.is_pql);
+  if(!pql.length) return {empty:true};
+  const months=new Set(F.map(r=>String(r.signup_date).slice(0,7))).size||1;
+
+  const rows=REP_DEFS.map(([name,terr,fn])=>{
+    const L=pql.filter(fn);
+    if(!L.length) return null;
+    const worked=L.filter(r=>r.sales_assisted).length;
+    const opps=L.filter(r=>O[r.trial_id]).length;
+    const wl=L.filter(r=>O[r.trial_id]&&O[r.trial_id].won);
+    const ag={};
+    L.forEach(r=>{ const k=r.ad_group||'unattributed';
+      const o=ag[k]=ag[k]||{g:k,n:0,opp:0,won:0,acv:0};
+      o.n++; const op=O[r.trial_id];
+      if(op){ o.opp++; if(op.won){ o.won++; o.acv+=(+op.acv_usd||0); } } });
+    const groups=Object.values(ag).filter(o=>o.n>=MIN_AG)
+      .map(o=>({...o, oppRate:pct(o.opp,o.n), winRate:pct(o.won,o.n)}))
+      .sort((a,b)=>b.oppRate-a.oppRate);
+    return {name, terr, n:L.length, worked, untouched:L.length-worked, opps,
+            oppRate:pct(opps,L.length), won:wl.length, winRate:pct(wl.length,L.length),
+            acv:wl.reduce((s,r)=>s+(+O[r.trial_id].acv_usd||0),0), groups};
+  }).filter(Boolean);
+
+  const worked=pql.filter(r=>r.sales_assisted).length;
+  const opps=pql.filter(r=>O[r.trial_id]).length;
+  const twon=pql.filter(r=>O[r.trial_id]&&O[r.trial_id].won);
+  const tot={n:pql.length, worked, untouched:pql.length-worked, opps,
+             oppRate:pct(opps,pql.length), won:twon.length,
+             winRate:pct(twon.length,pql.length),
+             acv:twon.reduce((s,r)=>s+(+O[r.trial_id].acv_usd||0),0)};
+
+  const nrep=rows.length||1;
+  const perRepMo=worked/months/nrep, capMo=DIALS_DAY*SELL_DAYS;
+  const spare=Math.min(Math.max(Math.round((capMo-perRepMo)*months*nrep),0), tot.untouched);
+
+  const t2=F.filter(r=>r.activated && !r.is_pql &&
+    (+((PUMAP[r.trial_id]||{}).engagement_score)||0)>=T2_ENG);
+  const t2won=t2.filter(r=>O[r.trial_id]&&O[r.trial_id].won).length;
+
+  return {rows, tot, months, nrep, perRepMo, perRepDay:perRepMo/SELL_DAYS, capMo, spare,
+          t2:{n:t2.length, won:t2won, winRate:pct(t2won,t2.length||1),
+              perRepMo:t2.length/months/nrep}};
+}
+
+function renderCov(view,f){
+  const a=cCov(f);
+  if(!a){ view.innerHTML='<div class="placeholder"><p class="n">Sales coverage</p><p>Loading…</p></div>'; return; }
+  if(a.empty){ view.innerHTML='<div class="placeholder"><p class="n">Sales coverage</p><p>No product-qualified leads in this slice — widen the filters.</p></div>'; return; }
+  const num=x=>Math.round(x).toLocaleString();
+  const M=x=>{x=+x||0; return x>=1e6?'$'+(x/1e6).toFixed(1)+'M':x>=1e3?'$'+Math.round(x/1e3)+'K':'$'+Math.round(x);};
+  const acol=v=> v>=35?'var(--green)' : v>=ACCEPT_BAR?'var(--text)' : 'var(--red)';
+  const verdict=v=> v>=35?['Scale','var(--green)'] : v>=ACCEPT_BAR?['Hold','var(--text2)'] : ['Cut','var(--red)'];
+
+  const agRow=o=>{ const [vt,vc]=verdict(o.oppRate);
+    return `<tr class="covag"><td style="padding-left:26px">${o.g}</td>
+      <td class="num">${num(o.n)}</td>
+      <td class="num" style="color:${acol(o.oppRate)}">${o.oppRate.toFixed(1)}%</td>
+      <td class="num">${o.won}</td><td class="num">${o.won?M(o.acv/o.won):'—'}</td>
+      <td class="num" style="color:${vc}">${vt}</td><td></td><td></td></tr>`; };
+
+  const repRows=a.rows.map(r=>{
+    const open=covOpen===r.name;
+    const head=`<tr class="covrep" data-rep="${r.name}" style="cursor:pointer">
+      <td><b>${open?'▾':'▸'} ${r.name}</b><br><span class="sub2">${r.terr}</span></td>
+      <td class="num">${num(r.n)}</td>
+      <td class="num">${num(r.worked)} · ${pct(r.worked,r.n).toFixed(0)}%</td>
+      <td class="num" style="color:var(--red)">${num(r.untouched)}</td>
+      <td class="num" style="color:${acol(r.oppRate)};font-weight:600">${r.oppRate.toFixed(1)}%</td>
+      <td class="num">${num(r.won)}</td>
+      <td class="num">${r.winRate.toFixed(1)}%</td>
+      <td class="num">${M(r.acv)}</td></tr>`;
+    if(!open) return head;
+    const sub=r.groups.length
+      ? `<tr class="covag"><td colspan="8" style="padding:9px 0 3px 26px;font-size:11.5px;color:var(--text3)">
+           By ad group — accepted = became a CRM opportunity · min ${MIN_AG} PQLs</td></tr>`
+        + r.groups.map(agRow).join('')
+      : `<tr class="covag"><td colspan="8" style="padding-left:26px;color:var(--text3)">No ad group with ${MIN_AG}+ PQLs in this slice.</td></tr>`;
+    return head+sub;
+  }).join('');
+
+  view.innerHTML=`
+  <div class="grid-kpi">
+    ${kpi('PQLs', num(a.tot.n), 'in this slice', null)}
+    ${kpi('Never worked', num(a.tot.untouched), `${pct(a.tot.untouched,a.tot.n).toFixed(0)}% of the queue`, 'var(--red)')}
+    ${kpi('Accepted as opportunity', a.tot.oppRate.toFixed(1)+'%', 'sales\u2019 own verdict', acol(a.tot.oppRate))}
+    ${kpi('Won ACV', M(a.tot.acv), `${num(a.tot.won)} customers`, 'var(--green)')}
+    ${kpi('Cost per customer', a.tot.won? M(filt(f).reduce((s,r)=>s+(+r.cac_usd||0),0)/a.tot.won):'—', 'blended', null)}
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Rep capacity</h3><span>worked PQLs \u00f7 reps \u00f7 months</span></div>
+    <div class="cmp">
+      <div><div class="lab"><span>Working now</span><span>${a.perRepDay.toFixed(1)} a day</span></div>
+        <div class="cbar"><div class="fill" style="width:${Math.min(a.perRepMo/a.capMo*100,100)}%;background:var(--sw)">${a.perRepMo.toFixed(0)}/mo</div></div></div>
+      <div><div class="lab"><span>Could handle at ${DIALS_DAY} a day</span><span></span></div>
+        <div class="cbar"><div class="fill" style="width:100%;background:#8B95A6">${a.capMo}/mo</div></div></div>
+    </div>
+    <div class="warnbox" style="margin-top:13px">Reps are at <b>${a.perRepDay.toFixed(1)} leads a day</b>. The queue isn\u2019t too tight \u2014 it\u2019s half empty:
+      <b>${num(a.tot.untouched)}</b> qualified leads were never picked up, and there is room for roughly <b>${num(a.spare)}</b> more touches at current headcount.</div>
+  </div>
+
+  <div class="panel" style="margin-top:12px">
+    <div class="head"><h3>Coverage by rep</h3><span>tap a rep to open their ad groups</span></div>
+    <table class="dtable"><thead><tr>
+      <th>Rep</th><th class="num">PQLs</th><th class="num">Worked</th><th class="num">Never worked</th>
+      <th class="num">Accepted</th><th class="num">Won</th><th class="num">Win%</th><th class="num">Won ACV</th>
+    </tr></thead><tbody>${repRows}</tbody></table>
+    <p class="note">Territories differ, so win rates are not a ranking. <b>Accepted</b> is the honest quality number: the share of PQLs a rep opened as an opportunity. Below ${ACCEPT_BAR}% the source is the problem, not the rep.</p>
+  </div>
+
+  <div class="ins" style="margin-top:12px"><div class="top"><div class="rank">1</div><h4>Fill the spare capacity in this order</h4></div>
+    <p class="ev">Widening the handoff to every activated trial <b>lowers</b> output \u2014 the pool triples but win rate falls from
+      <b>${a.tot.winRate.toFixed(1)}%</b> to around 9%, and reps still only work what they can reach. Volume is not the lever; the untouched queue is.</p>
+    <ul class="acts">
+      <li><b>First:</b> the ${num(a.tot.untouched)} untouched PQLs \u2014 already qualified, already sitting there, best win rate available.</li>
+      <li><b>Then:</b> a tier-2 queue of activated non-PQL trials with an engagement score of ${T2_ENG}+ \u2014
+        ${num(a.t2.n)} leads, about ${a.t2.perRepMo.toFixed(0)} per rep per month, winning at <b>${a.t2.winRate.toFixed(1)}%</b>.</li>
+      <li><b>Not below that.</b> Drop the engagement floor and acceptance falls toward raw-signup quality, which is how a scoring model loses the room.</li>
+    </ul>
+    <div class="impact">
+      <div><p class="n">${num(a.tot.untouched)}</p><p class="c">untouched PQLs</p></div>
+      <div><p class="n">${a.t2.winRate.toFixed(1)}%</p><p class="c">tier-2 win rate</p></div>
+      <div><p class="n">${a.t2.perRepMo.toFixed(0)}</p><p class="c">tier-2 leads/rep/mo</p></div>
+    </div>
+  </div>
+
+  <div class="insight">${bulb}
+    <p><b>When sales says the leads are bad, answer with acceptance rate, not with the lead score.</b>
+    Acceptance is the one funnel metric sales produces about marketing, so it ends the argument with a shared number instead of my model defending itself. Open any rep above to see which ad groups clear the ${ACCEPT_BAR}% bar and which get cut.</p></div>
+
+  <p class="note">Rep territories are product \u00d7 deployment; the five names are illustrative labels on real slices of the dataset. Every figure recomputes from the filters above.</p>`;
+
+  view.querySelectorAll('.covrep').forEach(tr=> tr.onclick=()=>{
+    covOpen = (covOpen===tr.dataset.rep) ? null : tr.dataset.rep; render(); });
+}
+
 function render(){
   clearCharts();
   const view=document.getElementById('view');
@@ -1985,6 +2141,7 @@ function render(){
     if(active==='Experiments') return renderExp(view,f);
     if(active==='Retention') return renderRetention(view,f);
     if(active==='Pipeline') return renderPipe(view,f);
+    if(active==='Sales coverage') return renderCov(view,f);
     if(active==='Unit economics') return renderEconomics(view,f);
     if(active==='Insights') return renderInsights(view,f);
     view.innerHTML='<div class="placeholder"><p class="n">'+active+'</p>'+
