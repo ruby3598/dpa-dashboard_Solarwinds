@@ -2077,15 +2077,14 @@ function renderCov(view,f){
   </div>
 
   <div class="panel" style="margin-top:12px">
-    <div class="head"><h3>Rep capacity</h3><span>worked PQLs \u00f7 reps \u00f7 months</span></div>
+    <div class="head"><h3>Capacity &rarr; spend signal</h3><span>worked PQLs \u00f7 reps \u00f7 months</span></div>
     <div class="cmp">
       <div><div class="lab"><span>Working now</span><span>${a.perRepDay.toFixed(1)} a day</span></div>
         <div class="cbar"><div class="fill" style="width:${Math.min(a.perRepMo/a.capMo*100,100)}%;background:var(--sw)">${a.perRepMo.toFixed(0)}/mo</div></div></div>
       <div><div class="lab"><span>Could handle at ${DIALS_DAY} a day</span><span></span></div>
         <div class="cbar"><div class="fill" style="width:100%;background:#8B95A6">${a.capMo}/mo</div></div></div>
     </div>
-    <div class="warnbox" style="margin-top:13px">Reps are at <b>${a.perRepDay.toFixed(1)} leads a day</b>. The queue isn\u2019t too tight \u2014 it\u2019s half empty:
-      <b>${num(a.tot.untouched)}</b> qualified leads were never picked up, and there is room for roughly <b>${num(a.spare)}</b> more touches at current headcount.</div>
+    <div class="warnbox" style="margin-top:13px">Reps are working <b>${a.perRepDay.toFixed(1)} leads a day</b> against a comfortable <b>${DIALS_DAY}</b>. That spare capacity is a <b>budget signal</b>: the team can absorb more volume, so there&rsquo;s room to scale acquisition spend and test new channels before conversion becomes the limit. If reps were at capacity, the call would flip &mdash; hold spend and fix conversion instead.</div>
   </div>
 
   <div class="panel" style="margin-top:12px">
