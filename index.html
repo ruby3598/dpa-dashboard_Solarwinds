@@ -799,7 +799,6 @@ function overviewHTML(){
     <div class="kpi"><p class="l">Avg trial duration</p><p class="v" id="k-dur">–</p><p class="s">median days to convert</p></div>
     <div class="kpi"><p class="l">Customer acq. cost</p><p class="v" id="k-cac">–</p><p class="s">avg per trial</p></div>
     <div class="kpi"><p class="l">Trial abandonment</p><p class="v" id="k-aband" style="color:var(--red)">–</p><p class="s">signed up, never activated</p></div>
-    <div class="kpi"><p class="l">Feature adoption</p><p class="v" id="k-feat">–</p><p class="s" id="k-feat-sub">avg of activated trials</p></div>
     <div class="kpi"><p class="l">LTV : CAC</p><p class="v" id="k-ltvcac">–</p><p class="s">healthy ≥ 3× · see Unit economics</p></div>
     <div class="kpi"><p class="l">CAC payback</p><p class="v sm" id="k-payback">–</p><p class="s">months to recover CAC</p></div>
   </div>
@@ -818,8 +817,6 @@ function renderOverview(view,f){
   document.getElementById('k-dur').textContent = a.kpis.trial_duration+' days';
   document.getElementById('k-cac').textContent = '$'+a.kpis.cac;
   document.getElementById('k-aband').textContent = a.kpis.abandonment.toFixed(1)+'%';
-  document.getElementById('k-feat').textContent = a.kpis.feature_adoption+'%';
-  document.getElementById('k-feat-sub').textContent = 'avg \u00b7 '+a.kpis.feature_stuck+'% under half';
   const e=cEconomics(f);
   const elR=document.getElementById('k-ltvcac'), elP=document.getElementById('k-payback');
   if(e.customers){
