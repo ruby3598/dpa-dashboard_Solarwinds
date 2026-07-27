@@ -1581,7 +1581,7 @@ function renderInsights(view,f){
           : `Among PQLs, sales-assisted converts at <b>${a.pqlSc.toFixed(1)}%</b> vs <b>${a.pqlNc.toFixed(1)}%</b> untouched. Confirm with a randomised holdout before scaling headcount.`}
       </div>
     </div>
-    <div class="ins"><div class="top"><div class="rank">1</div><h4>What sales should actually do on Monday</h4></div>
+    <div class="ins"><div class="top"><h4>What sales should actually do on Monday</h4></div>
       <ul class="acts">
         <li>Prioritise PQLs by <b>databases monitored</b>, not by company size — trials at 2+ databases convert at ${a.i2.conv.toFixed(1)}% vs ${a.i1.conv.toFixed(1)}% at one.</li>
         <li>Define the PQL → opportunity handoff so high-intent trials reach a rep <b>while the evaluation is still warm</b>, not after the trial expires.</li>
@@ -2096,19 +2096,23 @@ function renderCov(view,f){
     <p class="note">Territories differ, so win rates are not a ranking. <b>Accepted</b> is the honest quality number: the share of PQLs a rep opened as an opportunity. Below ${ACCEPT_BAR}% the source is the problem, not the rep.</p>
   </div>
 
-  <div class="ins" style="margin-top:12px"><div class="top"><div class="rank">1</div><h4>Fill the spare capacity in this order</h4></div>
-    <p class="ev">Widening the handoff to every activated trial <b>lowers</b> output \u2014 the pool triples but win rate falls from
-      <b>${a.tot.winRate.toFixed(1)}%</b> to around 9%, and reps still only work what they can reach. Volume is not the lever; the untouched queue is.</p>
+  <div class="ins" style="margin-top:12px"><div class="top"><h4>Give reps the best leads first</h4></div>
+    <p class="ev">Reps have room for more leads \u2014 but handing them <b>every</b> activated trial makes things worse, not better.
+      The pool triples while the win rate drops from <b>${a.tot.winRate.toFixed(1)}%</b> to the high single digits, and reps still
+      only call what they can reach. Same effort, fewer deals. This is not a case for more reps; it is a case for better use of the ones we have.</p>
     <ul class="acts">
-      <li><b>First:</b> the ${num(a.tot.untouched)} untouched PQLs \u2014 already qualified, already sitting there, best win rate available.</li>
-      <li><b>Then:</b> a tier-2 queue of activated non-PQL trials with an engagement score of ${T2_ENG}+ \u2014
-        ${num(a.t2.n)} leads, about ${a.t2.perRepMo.toFixed(0)} per rep per month, winning at <b>${a.t2.winRate.toFixed(1)}%</b>.</li>
-      <li><b>Not below that.</b> Drop the engagement floor and acceptance falls toward raw-signup quality, which is how a scoring model loses the room.</li>
+      <li><b>Start with the leads nobody called.</b> ${num(a.tot.untouched)} already-qualified leads are sitting untouched.
+        They cost nothing extra and they close better than anything else available.</li>
+      <li><b>Then the leftovers worth calling.</b> Trials that used the product but did not quite qualify, narrowed to an
+        engagement score of ${T2_ENG}+: ${num(a.t2.n)} leads, about ${a.t2.perRepMo.toFixed(0)} per rep a month, closing at
+        <b>${a.t2.winRate.toFixed(1)}%</b>. Worse than the first list, well ahead of nothing.</li>
+      <li><b>Stop there.</b> ${T2_ENG} is the floor. Go lower and quality slides toward random signups \u2014 acceptance falls,
+        and sales stops trusting the score.</li>
     </ul>
     <div class="impact">
-      <div><p class="n">${num(a.tot.untouched)}</p><p class="c">untouched PQLs</p></div>
-      <div><p class="n">${a.t2.winRate.toFixed(1)}%</p><p class="c">tier-2 win rate</p></div>
-      <div><p class="n">${a.t2.perRepMo.toFixed(0)}</p><p class="c">tier-2 leads/rep/mo</p></div>
+      <div><p class="n">${num(a.tot.untouched)}</p><p class="c">qualified, never called</p></div>
+      <div><p class="n">${a.t2.winRate.toFixed(1)}%</p><p class="c">close rate, second list</p></div>
+      <div><p class="n">${a.t2.perRepMo.toFixed(0)}</p><p class="c">second-list leads/rep/mo</p></div>
     </div>
   </div>
 
