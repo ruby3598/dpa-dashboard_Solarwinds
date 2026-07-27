@@ -253,7 +253,7 @@ const FB = {
     dead:38.8, emails:{setup_help_1:2,setup_help_2:5,feature_spotlight:8,trial_ending:12,extension_offer:14}},
   engagement:{kpis:{eng:33.3,open:37.2,click:12.7,adopt:79.9},buckets:[["0",14,0.0],["1-20",5562,3.5],["21-40",385,17.4],["41-60",1555,32.3],["61-80",1809,44.3],["81-100",675,49.8]],nurture:[["setup_help_1",10000,36.8,13.0],["setup_help_2",9999,37.3,12.3],["feature_spotlight",9948,37.6,12.9],["trial_ending",8837,36.5,12.3],["extension_offer",847,43.6,16.8]],features:{adoption:79.9,logins:12.4,wait:17.7,tuning:3.8,alerts:2.5,reports:1.9},clickConv:[17.6,21.2]},
   experiments:{ab:{A:{n:5031,act:42.1,pql:20.8,conv:17.7},B:{n:4969,act:46.9,pql:28.6,conv:20.4},lift:15.3},ext:{no:18.7,yes:23.0,n_yes:847},sales:{self:14.5,assisted:46.5,n_assisted:1415}},
-  pipeline:{stages:[["Discovery",19],["Demo/POC",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
+  pipeline:{stages:[["Discovery",19],["Technical Evaluation",15],["Proposal",5],["Negotiation",5],["Closed Won",658],["Closed Lost",713]],kpis:{open:44,winrate:46.5,avg_acv:12650,pipeline_acv:8324100},byprod:[["DPM",323,3966200],["DPA",234,2768100],["SQL Sentry",101,1589800]],winregion:[["LATAM",61.7],["NAM",47.4],["APAC",42.8],["EMEA",42.7]]}
 };
 
 const VIEWS = ['Overview','Activation funnel','Product events','Acquisition & CAC','Engagement & nurture','Experiments','Retention','Pipeline','Sales coverage','Unit economics','Insights'];
@@ -771,11 +771,11 @@ function cExp(f){
 function cPipe(f){
   if(!HAVE() || !CRM) return FB.pipeline;
   const O=CRM.filter(o=>(f.product==='all'||o.product===f.product)&&(f.region==='all'||o.region===f.region));
-  const order=['Discovery','Demo/POC','Proposal','Negotiation','Closed Won','Closed Lost'];
+  const order=['Discovery','Technical Evaluation','Proposal','Negotiation','Closed Won','Closed Lost'];
   const sc={}; O.forEach(o=>sc[o.stage]=(sc[o.stage]||0)+1);
   const stages=order.map(s=>[s,sc[s]||0]);
   const won=O.filter(o=>o.won);
-  const openStages=new Set(['Discovery','Demo/POC','Proposal','Negotiation']);
+  const openStages=new Set(['Discovery','Technical Evaluation','Proposal','Negotiation']);
   const kpis={open:O.filter(o=>openStages.has(o.stage)).length,winrate:r1(pct(won.length,O.length)),avg_acv:Math.round(mean(won.map(o=>+o.acv_usd||0))),pipeline_acv:Math.round(won.reduce((a,o)=>a+(+o.acv_usd||0),0))};
   const bp={}; won.forEach(o=>{const p=bp[o.product]=bp[o.product]||{n:0,acv:0}; p.n++; p.acv+=+o.acv_usd||0;});
   const byprod=Object.entries(bp).map(([p,o])=>[p,o.n,Math.round(o.acv)]).sort((a,b)=>b[2]-a[2]);
